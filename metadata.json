@@ -1,0 +1,6 @@
+{
+  "name": "Comprehensive E-Commerce Platform",
+  "description": "A high-performance, mobile-responsive E-commerce platform with automated delivery request, Courier API simulations, Advanced Fake Order risk scoring powered by local AI patterns, robust Admin controls, and dual-mode storefront.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
