@@ -24,7 +24,8 @@ import {
   MainCategory,
   HeroBanner,
   StoreEvent,
-  PromoBanner
+  PromoBanner,
+  ShopReel
 } from "./src/types";
 
 const app = express();
@@ -100,6 +101,21 @@ let promoBanners: PromoBanner[] = [
     badge2: "নির্ভরযোগ্য সেলার",
     image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=300"
   }
+];
+
+let shopReels: ShopReel[] = [
+  {
+    id: "reel-1",
+    title: "Quick pic",
+    handle: "quick-pic",
+    coverImage: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=300",
+  },
+  {
+    id: "reel-2",
+    title: "Deshi Dukan",
+    handle: "deshi-dukan",
+    coverImage: "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&q=80&w=300",
+  },
 ];
 
 // Pre-seed Categories with subcategories & child categories
@@ -450,9 +466,9 @@ let coupons: Coupon[] = [
 // Default App Settings
 let appSettings: AppSettings = {
   // Brand & Identity
-  siteName: "KenakataBD",
-  siteLogo: "https://placehold.co/400x120/00c09d/white?text=KenakataBD",
-  siteFavicon: "https://placehold.co/100x100/00c09d/white?text=K",
+  siteName: "Storefront",
+  siteLogo: "https://placehold.co/400x120/00c09d/white?text=Logo",
+  siteFavicon: "https://placehold.co/100x100/00c09d/white?text=S",
   
   // Theme & Colors
   primaryColor: "#00c09d",
@@ -489,6 +505,8 @@ let appSettings: AppSettings = {
   sslIsLive: false,
   fbPixelId: "650123904123512",
   googleAnalyticsId: "G-903182312",
+  googleClientId: "",
+  facebookAppId: "",
   
   // BulkSMSBD support
   bulkSmsApiKey: "MOCK_BULK_SMS_API_KEY",
@@ -794,6 +812,38 @@ app.post("/api/promo-banners", (req, res) => {
 
 app.delete("/api/promo-banners/:id", (req, res) => {
   promoBanners = promoBanners.filter(p => p.id !== req.params.id);
+  res.json({ success: true });
+});
+
+// ShopReel Endpoints
+app.get("/api/shop-reels", (req, res) => {
+  res.json(shopReels);
+});
+
+app.post("/api/shop-reels", (req, res) => {
+  const { title, handle, coverImage } = req.body;
+  const newReel: ShopReel = {
+    id: `reel-${Date.now()}`,
+    title: title || "New Reel",
+    handle: handle || "handle",
+    coverImage: coverImage || "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=300"
+  };
+  shopReels.push(newReel);
+  res.json({ success: true, reel: newReel });
+});
+
+app.put("/api/shop-reels/:id", (req, res) => {
+  const idx = shopReels.findIndex(r => r.id === req.params.id);
+  if (idx !== -1) {
+    shopReels[idx] = { ...shopReels[idx], ...req.body };
+    res.json({ success: true, reel: shopReels[idx] });
+  } else {
+    res.status(404).json({ error: "Reel not found" });
+  }
+});
+
+app.delete("/api/shop-reels/:id", (req, res) => {
+  shopReels = shopReels.filter(r => r.id !== req.params.id);
   res.json({ success: true });
 });
 
@@ -1181,13 +1231,28 @@ app.post("/api/otp/send", async (req, res) => {
     const smsBody = `Your ${appSettings.siteName} verification OTP is ${code}. Valid for 5 minutes.`;
     
     if (apiKey && apiKey !== "MOCK_SMS_GATEWAY_KEY_930182") {
-      const smsUrl = `http://bulksmsbd.net/api/smsapi?api_key=${apiKey}&type=text&number=${cleanPhone}&senderid=${senderId}&message=${encodeURIComponent(smsBody)}`;
+      const smsUrl = `https://bulksmsbd.com/api/smsapi?api_key=${apiKey}&type=text&number=${cleanPhone}&senderid=${senderId}&message=${encodeURIComponent(smsBody)}`;
       const smsRes = await fetch(smsUrl);
       const data = await smsRes.json();
       console.log("BulkSMSBD OTP response:", data);
+      
+      // BulkSMSBD success is usually response_code 200 or status 'success'
+      if (data.response_code !== 200 && data.status !== "success") {
+        console.error("BulkSMSBD API Error:", data);
+        return res.status(500).json({ error: data.success_message || "Failed to send OTP via SMS Gateway." });
+      }
+    } else {
+      console.warn("[OTP] SMS Gateway API Key is missing. OTP will only be visible in server logs.");
+      // If the user expects a real SMS, we should probably tell them it's not configured.
+      // But for backward compatibility with "mock" mode, we might just log it.
+      // However, the user is complaining, so let's be more strict if they didn't provide a key.
+      if (!apiKey) {
+        return res.status(500).json({ error: "SMS Gateway not configured. Please add BulkSMSBD API Key in Admin Settings." });
+      }
     }
   } catch (err) {
     console.error("BulkSMSBD OTP Error:", err);
+    return res.status(500).json({ error: "Failed to send SMS via Gateway." });
   }
 
   // Do not send OTP back to the frontend for security.
@@ -1199,11 +1264,6 @@ app.post("/api/otp/verify", (req, res) => {
   const cleanPhone = phone.replace(/[^\d+]/g, "").trim();
   const stored = otpStore[cleanPhone];
   
-  if (code === "1234") { // Mock override
-    verifiedPhonesStore[cleanPhone] = { expires: Date.now() + 15 * 60 * 1000 };
-    return res.json({ success: true });
-  }
-
   if (!stored) return res.status(400).json({ error: "No OTP sent to this number" });
   if (Date.now() > stored.expires) return res.status(400).json({ error: "OTP Expired" });
   if (stored.code !== code) return res.status(400).json({ error: "Invalid OTP" });
@@ -1480,7 +1540,7 @@ Generate JSON with:
     const senderId = appSettings.bulkSmsSenderId || appSettings.smsSenderId;
     
     if (apiKey && apiKey !== "MOCK_SMS_GATEWAY_KEY_930182") {
-      const smsUrl = `http://bulksmsbd.net/api/smsapi?api_key=${apiKey}&type=text&number=${cleanPhone}&senderid=${senderId}&message=${encodeURIComponent(smsBody)}`;
+      const smsUrl = `https://bulksmsbd.com/api/smsapi?api_key=${apiKey}&type=text&number=${cleanPhone}&senderid=${senderId}&message=${encodeURIComponent(smsBody)}`;
       
       fetch(smsUrl)
         .then(res => res.json())

@@ -15,7 +15,8 @@ export default function AccountPanel({
   onAddToCart,
   initialTab,
   onLoginTrigger,
-  onTabChange
+  onTabChange,
+  settings
 }: {
   currentSession: any;
   orders: Order[];
@@ -30,11 +31,13 @@ export default function AccountPanel({
   initialTab?: string;
   onLoginTrigger?: () => void;
   onTabChange?: (tabId: string) => void;
+  settings?: any;
 }) {
   const [activeTab, setActiveTab] = useState(initialTab || "menu");
   const [ordersTab, setOrdersTab] = useState("all");
   const [reviewsTab, setReviewsTab] = useState("to_review");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [trackId, setTrackId] = useState("");
   const [trackedOrder, setTrackedOrder] = useState<any>(null);
   const [trackError, setTrackError] = useState("");
@@ -599,7 +602,7 @@ export default function AccountPanel({
       { id: "password", icon: Lock, label: "Change Password" },
       { id: "2fa", icon: ShieldCheck, label: "Two-Factor Authentication" },
       { id: "track", icon: Search, label: "Track Order" },
-      { id: "logout", icon: LogOut, label: "Logout", action: onLogout },
+      { id: "logout", icon: LogOut, label: "Logout", action: () => setShowLogoutConfirm(true) },
     ];
     
     const aboutItems = [
@@ -696,17 +699,13 @@ export default function AccountPanel({
       { id: "password", icon: Lock, label: "Change Password" },
       { id: "2fa", icon: ShieldCheck, label: "Two-Factor Authentication" },
       { id: "track", icon: Search, label: "Track Order" },
-      ...(currentSession 
-        ? [{ id: "logout", icon: LogOut, label: "Logout", action: onLogout }]
-        : [{ id: "login", icon: LogIn, label: "Login / Signup", action: onLoginTrigger }]
-      )
     ];
-
+    
     return (
       <div className="flex flex-col w-full bg-white pb-[80px]">
-        {/* Profile/Avatar section exactly like the screenshot */}
+        {/* Header section */}
         <div className="relative px-6 pt-6 pb-4 border-b border-gray-100 flex flex-col">
-          {/* Close X button inside the menu */}
+          {/* Close X button */}
           <button 
             onClick={onClose} 
             className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 outline-none hover:bg-slate-50 rounded-full transition-all cursor-pointer"
@@ -714,55 +713,78 @@ export default function AccountPanel({
             <X className="w-5.5 h-5.5" strokeWidth={1.5} />
           </button>
 
-          {/* User information display block */}
-          <div className="flex flex-col items-start mt-2">
-            <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center border border-slate-200 mb-3 shadow-[inset_0_1px_3px_rgba(0,0,0,0.06)]">
-              <User className="w-6 h-6 text-slate-400" strokeWidth={1.5} />
+          {!currentSession ? (
+             <div className="flex items-center justify-between mt-2 pr-10">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 bg-slate-100 rounded-full flex items-center justify-center border border-slate-200 shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]">
+                    <User className="w-6 h-6 text-slate-400" strokeWidth={1.5} />
+                  </div>
+                  <span className="font-bold text-slate-700 text-[16px] tracking-tight">
+                    Welcome to {settings?.siteName || "Packly"}
+                  </span>
+                </div>
+                <button
+                  onClick={onLoginTrigger}
+                  className="bg-[#00c09d] hover:bg-[#00b08f] text-white px-4 py-2.5 rounded-lg text-[13px] font-bold shadow-sm active:scale-95 transition-transform"
+                >
+                  Login / Signup
+                </button>
+             </div>
+          ) : (
+            <div className="flex flex-col items-start mt-2">
+              <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center border border-slate-200 mb-3 shadow-[inset_0_1px_3px_rgba(0,0,0,0.06)]">
+                <User className="w-6 h-6 text-slate-400" strokeWidth={1.5} />
+              </div>
+              <span className="font-bold text-slate-800 text-[18px] tracking-tight leading-none mb-1">
+                {currentSession?.name || "N/A"}
+              </span>
             </div>
-            <span className="font-bold text-slate-800 text-[18px] tracking-tight leading-none mb-1">
-              {currentSession?.name || "N/A"}
-            </span>
-          </div>
+          )}
         </div>
 
-        {/* Section MY ACCOUNT */}
-        <div className="px-6 pt-5 pb-1">
-          <h3 className="text-gray-400 text-[11.5px] font-bold tracking-wider uppercase">MY ACCOUNT</h3>
-        </div>
+        {/* Section MY ACCOUNT (Only for logged in) */}
+        {currentSession && (
+          <>
+            <div className="px-6 pt-5 pb-1">
+              <h3 className="text-gray-400 text-[11.5px] font-bold tracking-wider uppercase">MY ACCOUNT</h3>
+            </div>
 
-        {/* List of items rendered without container card or shadow */}
-        <div className="flex flex-col px-6 gap-5.5 pb-6 mt-3">
-          {listItems.map((item) => {
-            const Icon = item.icon;
-            return (
+            <div className="flex flex-col px-6 gap-5.5 pb-6 mt-3">
+              {listItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      if (onTabChange) {
+                        onTabChange(item.id);
+                      } else {
+                        setActiveTab(item.id);
+                      }
+                    }}
+                    className="flex items-center gap-4 text-slate-700 hover:text-[#00c09d] transition-colors py-0.5 text-left outline-none cursor-pointer"
+                  >
+                    <Icon className="w-[19px] h-[19px] text-slate-500" strokeWidth={1.5} />
+                    <span className="text-[14.5px] font-medium text-slate-600 hover:text-[#00c09d] transition-colors">{item.label}</span>
+                  </button>
+                );
+              })}
               <button
-                key={item.id}
-                onClick={() => {
-                  if (item.action) {
-                    item.action();
-                  } else {
-                    if (onTabChange) {
-                      onTabChange(item.id);
-                    } else {
-                      setActiveTab(item.id);
-                    }
-                  }
-                }}
+                onClick={() => setShowLogoutConfirm(true)}
                 className="flex items-center gap-4 text-slate-700 hover:text-[#00c09d] transition-colors py-0.5 text-left outline-none cursor-pointer"
               >
-                <Icon className="w-[19px] h-[19px] text-slate-500" strokeWidth={1.5} />
-                <span className="text-[14.5px] font-medium text-slate-600 hover:text-[#00c09d] transition-colors">{item.label}</span>
+                <LogOut className="w-[19px] h-[19px] text-slate-500" strokeWidth={1.5} />
+                <span className="text-[14.5px] font-medium text-slate-600 hover:text-[#00c09d] transition-colors">Logout</span>
               </button>
-            );
-          })}
-        </div>
+            </div>
+          </>
+        )}
 
         {/* Section ABOUT */}
-        <div className="px-6 pt-5 pb-1 border-t border-gray-100 mt-2">
+        <div className={`px-6 pt-5 pb-1 ${currentSession ? 'border-t border-gray-100 mt-2' : ''}`}>
           <h3 className="text-gray-400 text-[11.5px] font-bold tracking-wider uppercase">ABOUT</h3>
         </div>
 
-        {/* List of About items rendered exactly like the screenshot */}
         <div className="flex flex-col px-6 gap-5.5 pb-12 mt-3">
           {[
             { id: "terms", icon: Info, label: "Terms and Conditions" },
@@ -817,6 +839,41 @@ export default function AccountPanel({
        )}
        
        {isMenuOpen && renderMenuDrawer()}
+
+       {showLogoutConfirm && (
+         <div className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center p-6 animate-fade-in">
+           <div className="bg-white rounded-[32px] w-full max-w-sm p-8 flex flex-col items-center animate-scale-up shadow-xl">
+             <div className="w-20 h-20 bg-[#f0f4f8] rounded-full flex items-center justify-center mb-8">
+               <LogOut className="w-10 h-10 text-slate-400 -translate-x-0.5" strokeWidth={1.5} />
+             </div>
+             
+             <h3 className="text-[22px] font-bold text-slate-800 mb-3 text-center">
+               Aww! Sure want to Log Out?
+             </h3>
+             <p className="text-slate-500 text-center text-[15px] mb-10 leading-relaxed px-2">
+               Stay logged in to place your next order faster
+             </p>
+             
+             <div className="flex flex-col gap-3 w-full">
+               <button 
+                 onClick={() => setShowLogoutConfirm(false)}
+                 className="w-full py-4 rounded-full border border-slate-300 text-slate-700 font-bold text-[16px] transition-all active:scale-[0.98] outline-none"
+               >
+                 Cancel
+               </button>
+               <button 
+                 onClick={() => {
+                   setShowLogoutConfirm(false);
+                   onLogout();
+                 }}
+                 className="w-full py-4 rounded-full bg-[#00c09d] text-white font-bold text-[16px] transition-all active:scale-[0.98] shadow-sm outline-none"
+               >
+                 Confirm Logout
+               </button>
+             </div>
+           </div>
+         </div>
+       )}
     </div>
   );
 }

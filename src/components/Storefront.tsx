@@ -47,6 +47,7 @@ import {
   PromoBanner,
   Order,
   AppSettings,
+  ShopReel
 } from "../types";
 import AccountPanel from "./AccountPanel";
 import FacebookSkeleton from "./FacebookSkeleton";
@@ -59,6 +60,7 @@ export interface StorefrontProps {
   heroBanners: HeroBanner[];
   storeEvents: StoreEvent[];
   promoBanners: PromoBanner[];
+  shopReels: ShopReel[];
   cartCount: number;
   onOpenCart: () => void;
   onSelectProduct: (product: Product) => void;
@@ -80,15 +82,24 @@ export interface StorefrontProps {
 const EventCountdown = React.memo(({ expiryTime, onExpire }: { expiryTime: string; onExpire: () => void }) => {
   const [remTime, setRemTime] = useState({ hours: 0, minutes: 0, seconds: 0, cs: 0, isExpired: false });
   const expiredCalledRef = React.useRef(false);
+  const onExpireRef = React.useRef(onExpire);
+
+  // Keep the latest onExpire in a ref to avoid re-triggering the main effect
+  useEffect(() => {
+    onExpireRef.current = onExpire;
+  }, [onExpire]);
 
   useEffect(() => {
     const updateTime = () => {
       const diff = new Date(expiryTime).getTime() - Date.now();
       if (diff <= 0) {
-        setRemTime({ hours: 0, minutes: 0, seconds: 0, cs: 0, isExpired: true });
+        setRemTime((prev) => {
+          if (prev.isExpired) return prev;
+          return { hours: 0, minutes: 0, seconds: 0, cs: 0, isExpired: true };
+        });
         if (!expiredCalledRef.current) {
           expiredCalledRef.current = true;
-          onExpire();
+          onExpireRef.current();
         }
         return false;
       }
@@ -96,7 +107,13 @@ const EventCountdown = React.memo(({ expiryTime, onExpire }: { expiryTime: strin
       const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
       const seconds = Math.floor((diff % (1000 * 60)) / 1000);
       const cs = Math.floor((diff % 1000) / 10);
-      setRemTime({ hours, minutes, seconds, cs, isExpired: false });
+      
+      setRemTime((prev) => {
+        if (prev.hours === hours && prev.minutes === minutes && prev.seconds === seconds && prev.cs === cs && !prev.isExpired) {
+          return prev;
+        }
+        return { hours, minutes, seconds, cs, isExpired: false };
+      });
       return true;
     };
 
@@ -111,7 +128,7 @@ const EventCountdown = React.memo(({ expiryTime, onExpire }: { expiryTime: strin
     }, 50);
 
     return () => clearInterval(interval);
-  }, [expiryTime, onExpire]);
+  }, [expiryTime]); // onExpire is handled via ref to prevent loops
 
   if (remTime.isExpired) {
     return <span className="text-white text-xs font-bold bg-red-600 px-2 py-0.5 rounded shadow">ইভেন্ট শেষ হয়েছে</span>;
@@ -138,6 +155,86 @@ const EventCountdown = React.memo(({ expiryTime, onExpire }: { expiryTime: strin
   );
 });
 
+// Dynamic Site Logo component (moved outside to prevent re-creation)
+const SiteLogoComp = ({ settings, className = "w-6 h-6", style, iconOnly = false }: { settings: any, className?: string, style?: React.CSSProperties, iconOnly?: boolean }) => {
+  if (settings?.siteLogo && !iconOnly) {
+    return <img src={settings.siteLogo} alt={settings.siteName} className={className} style={style} />;
+  }
+  return (
+    <div className={`flex items-center justify-center bg-gradient-to-br from-[#00c09d] to-[#00ab8b] rounded-lg p-1.5 shadow-sm ${className}`} style={style}>
+      <svg
+        viewBox="0 0 200 200"
+        className="w-full h-full text-white"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M50 50 L100 20 L150 50 L150 150 L100 180 L50 150 Z"
+          fill="currentColor"
+        />
+        <path d="M100 20 L100 100 L50 75 Z" fill="rgba(255,255,255,0.1)" />
+        <path d="M100 100 L150 75 L150 150 L100 180 Z" fill="rgba(0,0,0,0.1)" />
+      </svg>
+    </div>
+  );
+};
+
+const ProductCard = ({ p, wishlist, onToggleWishlist, onSelectProduct }: { p: Product, wishlist: string[], onToggleWishlist: (id: string) => void, onSelectProduct: (p: Product) => void }) => (
+  <div
+    className="bg-white rounded-xl p-3 flex flex-col shadow-sm cursor-pointer border border-transparent hover:border-[#00c09d] hover:shadow-md transition-all group"
+    onClick={() => onSelectProduct(p)}
+  >
+    <div className="h-44 bg-gray-50 rounded-lg mb-3 flex items-center justify-center overflow-hidden border border-gray-100 relative">
+      <img
+        src={p.gallery?.[0]}
+        className="max-h-full max-w-full object-contain mix-blend-multiply group-hover:scale-110 transition-transform duration-500"
+        alt={p.name}
+      />
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleWishlist(p.id);
+        }}
+        className="absolute top-2 right-2 w-8 h-8 bg-white/90 hover:bg-white active:scale-95 transition-all rounded-full shadow flex items-center justify-center cursor-pointer z-10"
+        title={wishlist.includes(p.id) ? "Remove from wishlist" : "Add to wishlist"}
+      >
+        <Heart className={`w-4 h-4 ${wishlist.includes(p.id) ? "text-red-500 fill-current" : "text-gray-400"}`} />
+      </button>
+      {p.discountPercent > 0 && (
+        <span className="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
+          -{p.discountPercent}%
+        </span>
+      )}
+    </div>
+    <div className="flex items-center gap-1 mb-1.5">
+      <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+      <span className="text-[11px] font-semibold text-gray-500">
+        {p.rating}
+      </span>
+      {p.isNewArrival && (
+        <span className="text-[#00c09d] text-[10px] font-bold ml-auto bg-[#00c09d]/10 px-1.5 py-0.5 rounded">
+          New
+        </span>
+      )}
+    </div>
+    <h4 className="text-[12px] font-bold text-slate-800 line-clamp-2 h-[34px] leading-tight mb-3 tracking-tight group-hover:text-[#00c09d] transition-colors">
+      {p.name}
+    </h4>
+    <div className="mt-auto">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[#00c09d] font-bold text-base">
+          ৳{(p.salePrice || p.price).toLocaleString()}
+        </span>
+        {p.discountPercent > 0 && (
+          <span className="text-gray-400 text-[11px] line-through font-medium">
+            ৳{p.price.toLocaleString()}
+          </span>
+        )}
+      </div>
+    </div>
+  </div>
+);
+
 export default function Storefront({
   products,
   categories,
@@ -146,6 +243,7 @@ export default function Storefront({
   heroBanners,
   storeEvents,
   promoBanners,
+  shopReels,
   cartCount,
   onOpenCart,
   onSelectProduct,
@@ -168,6 +266,7 @@ export default function Storefront({
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [pageLoadingLayout, setPageLoadingLayout] = useState<"main" | "categories" | "favorites" | "profile">("main");
   const [fakeProgress, setFakeProgress] = useState(0);
+  const [visibleProductsCount, setVisibleProductsCount] = useState(27);
 
   const changeTabWithLoading = (tabId: "home" | "category" | "wishlist" | "profile", layoutType: "main" | "categories" | "favorites" | "profile") => {
     setShowSearchResults(false);
@@ -183,7 +282,7 @@ export default function Storefront({
         }
         return prev + 15;
       });
-    }, 100);
+    }, 80); // Slightly faster progress
 
     setTimeout(() => {
       clearInterval(interval);
@@ -192,9 +291,9 @@ export default function Storefront({
       setTimeout(() => {
         setIsPageLoading(false);
         setFakeProgress(0);
-      }, 150);
+      }, 100);
       window.scrollTo({ top: 0, behavior: "smooth" });
-    }, 700);
+    }, 500); // Faster loading feel
   };
 
   const handleSelectMainCategory = (catId: string) => {
@@ -230,14 +329,15 @@ export default function Storefront({
     "phone" | "otp" | "complete_profile"
   >("phone");
   const [pendingPhone, setPendingPhone] = useState("");
-  const [otpArray, setOtpArray] = useState<string[]>(Array(6).fill(""));
+  const [otpArray, setOtpArray] = useState<string[]>(Array(4).fill(""));
   const [otpTimer, setOtpTimer] = useState(120);
+  const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
     let interval: any;
     if (authStep === "otp") {
       setOtpTimer(120);
-      setOtpArray(Array(6).fill(""));
+      setOtpArray(Array(4).fill(""));
       interval = setInterval(() => {
         setOtpTimer((prev) => {
           if (prev <= 1) {
@@ -262,16 +362,59 @@ export default function Storefront({
   };
   const [pendingName, setPendingName] = useState("");
 
-  const handleSendOtp = () => {
+  const handleSendOtp = async () => {
     if (!pendingPhone || pendingPhone.length < 11) {
-      onNotify('error', "Please enter a valid mobile number");
+      onNotify('error', "সঠিক মোবাইল নম্বর দিন");
       return;
     }
-    setAuthStep("otp");
+    
+    setAuthLoading(true);
+    try {
+      const res = await fetch("/api/otp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: pendingPhone })
+      });
+      const data = await res.json();
+      if (data.success) {
+        onNotify('success', "OTP পাঠানো হয়েছে");
+        setAuthStep("otp");
+      } else {
+        onNotify('error', data.error || "OTP পাঠাতে ব্যর্থ হয়েছে");
+      }
+    } catch (err) {
+      onNotify('error', "সার্ভার এরর! আবার চেষ্টা করুন");
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
-  const handleVerifyOtp = () => {
-    setAuthStep("complete_profile");
+  const handleVerifyOtp = async () => {
+    const code = otpArray.join("");
+    if (code.length < 4) {
+      onNotify('error', "সঠিক OTP দিন");
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      const res = await fetch("/api/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: pendingPhone, code })
+      });
+      const data = await res.json();
+      if (data.success) {
+        onNotify('success', "ভেরিফিকেশন সফল হয়েছে");
+        setAuthStep("complete_profile");
+      } else {
+        onNotify('error', data.error || "ভুল OTP! আবার চেষ্টা করুন");
+      }
+    } catch (err) {
+      onNotify('error', "ভেরিফিকেশন ব্যর্থ হয়েছে");
+    } finally {
+      setAuthLoading(false);
+    }
   };
   const [searchTerm, setSearchTerm] = useState("");
   const [showBanner, setShowBanner] = useState(true);
@@ -309,6 +452,11 @@ export default function Storefront({
     string | null
   >(null);
 
+  const mainCatRef = React.useRef<HTMLDivElement>(null);
+  const eventRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
+  const popCatRef = React.useRef<HTMLDivElement>(null);
+  const [autoSlideSection, setAutoSlideSection] = useState(0); // 0: Hero, 1: MainCat, 2: Event, 3: PopCat
+
   const heroImages = [
     "https://images.unsplash.com/photo-1555529733-0e67056058e1?auto=format&fit=crop&q=80&w=400",
     "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&q=80&w=400",
@@ -326,9 +474,53 @@ export default function Storefront({
   useEffect(() => {
     const slideCount =
       heroBanners.length > 0 ? heroBanners.length : heroImages.length;
-    const t2 = setInterval(() => {
-      setHeroIdx((prev) => (prev + 1) % slideCount);
-    }, 4000);
+    
+    // Master timer for sequential auto-sliding
+    const masterTimer = setInterval(() => {
+      setAutoSlideSection((prev) => {
+        const next = (prev + 1) % 4;
+        
+        if (next === 0) {
+          // Hero Slide
+          setHeroIdx((p) => (p + 1) % slideCount);
+        } else if (next === 1) {
+          // Main Categories Scroll
+          if (mainCatRef.current) {
+            const { scrollLeft, scrollWidth, clientWidth } = mainCatRef.current;
+            if (scrollLeft + clientWidth >= scrollWidth - 20) {
+              mainCatRef.current.scrollTo({ left: 0, behavior: "smooth" });
+            } else {
+              mainCatRef.current.scrollBy({ left: 400, behavior: "smooth" });
+            }
+          }
+        } else if (next === 2) {
+          // Event Products Scroll
+          eventRefs.current.forEach((ref) => {
+            if (ref) {
+              const { scrollLeft, scrollWidth, clientWidth } = ref;
+              if (scrollLeft + clientWidth >= scrollWidth - 20) {
+                ref.scrollTo({ left: 0, behavior: "smooth" });
+              } else {
+                ref.scrollBy({ left: 350, behavior: "smooth" });
+              }
+            }
+          });
+        } else if (next === 3) {
+          // Popular Categories Scroll
+          if (popCatRef.current) {
+            const { scrollLeft, scrollWidth, clientWidth } = popCatRef.current;
+            if (scrollLeft + clientWidth >= scrollWidth - 20) {
+              popCatRef.current.scrollTo({ left: 0, behavior: "smooth" });
+            } else {
+              popCatRef.current.scrollBy({ left: 300, behavior: "smooth" });
+            }
+          }
+        }
+        
+        return next;
+      });
+    }, 3000); // Faster interval (3s) as requested
+
     const t = setInterval(() => {
       setTimeLeft((prev) => {
         let { hours, minutes, seconds, cs } = prev;
@@ -350,33 +542,11 @@ export default function Storefront({
     }, 10);
     return () => {
       clearInterval(t);
-      clearInterval(t2);
+      clearInterval(masterTimer);
     };
-  }, []);
+  }, [heroBanners.length, heroImages.length]);
 
   const dts = (n: number) => n.toString().padStart(2, "0");
-
-  // Dynamic Site Logo component
-  const SiteLogoComp = ({ className = "w-6 h-6", style, iconOnly = false }: { className?: string, style?: React.CSSProperties, iconOnly?: boolean }) => {
-    if (settings?.siteLogo && !iconOnly) {
-      return <img src={settings.siteLogo} alt={settings.siteName} className={className} style={style} />;
-    }
-    return (
-      <svg
-        viewBox="0 0 200 200"
-        className={className}
-        style={style}
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path
-          d="M50 50 L100 20 L150 50 L150 150 L100 180 L50 150 Z"
-          fill="currentColor"
-        />
-        <path d="M100 20 L100 100 L50 75 Z" fill="rgba(0,0,0,0.1)" />
-        <path d="M100 100 L150 75 L150 150 L100 180 Z" fill="rgba(0,0,0,0.2)" />
-      </svg>
-    );
-  };
 
 
 
@@ -582,14 +752,126 @@ export default function Storefront({
   };
 
   return (
-    <div className="bg-[#f0f2f5] min-h-screen text-slate-800 flex flex-col font-sans pb-[70px] relative selection:bg-[#00c09d] selection:text-white mx-auto max-w-md w-full shadow-2xl overflow-hidden">
+    <div className="bg-[#f0f2f5] min-h-screen text-slate-800 flex flex-col font-sans md:pb-0 pb-[70px] relative selection:bg-[#00c09d] selection:text-white mx-auto md:max-w-none max-w-md w-full md:shadow-none shadow-2xl overflow-x-hidden overflow-y-auto">
       {/* Dynamic Browser loading bar */}
       {isPageLoading && (
         <div 
-          className="absolute top-0 left-0 h-[3.5px] bg-[#00c09d] transition-all duration-150 ease-out z-[9999]"
+          className="fixed top-0 left-0 h-[3.5px] bg-[#00c09d] transition-all duration-150 ease-out z-[9999]"
           style={{ width: `${fakeProgress}%` }}
         />
       )}
+
+      {/* DESKTOP HEADER (Packly Style) */}
+      <div className="hidden md:block bg-white border-b border-gray-100 sticky top-0 z-[60]">
+        {/* Top Info Bar */}
+        <div className="bg-[#00c09d] text-white py-1.5 px-4">
+           <div className="max-w-7xl mx-auto flex justify-between items-center text-[11px] font-medium">
+              <div className="flex items-center gap-6">
+                 <span className="flex items-center gap-1.5"><Phone className="w-3 h-3" /> {settings.contactPhone}</span>
+                 <span className="flex items-center gap-1.5"><Mail className="w-3 h-3" /> {settings.contactEmail}</span>
+              </div>
+              <div className="flex items-center gap-6">
+                 <button className="hover:underline">Track Order</button>
+                 <button className="hover:underline">Help Center</button>
+                 <button className="hover:underline">Sell With Us</button>
+              </div>
+           </div>
+        </div>
+
+        {/* Main Header Bar */}
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between gap-8">
+           <div 
+             className="flex items-center gap-2 cursor-pointer shrink-0"
+             onClick={() => changeTabWithLoading("home", "main")}
+           >
+              <SiteLogoComp settings={settings} className="h-10 w-auto" style={{ maxWidth: '180px' }} />
+              {!settings.siteLogo && <span className="font-black text-2xl tracking-tighter text-slate-900">{settings.siteName}</span>}
+           </div>
+
+           {/* Large Search Bar */}
+           <div className="flex-1 max-w-2xl relative">
+              <div className="flex items-center border-2 border-[#00c09d] rounded-md overflow-hidden bg-gray-50 focus-within:bg-white transition-colors">
+                 <input 
+                   type="text" 
+                   placeholder={`Search in ${settings.siteName}...`} 
+                   className="w-full py-2.5 px-4 text-sm bg-transparent focus:outline-none placeholder-gray-400 font-medium"
+                   value={searchTerm}
+                   onChange={(e) => setSearchTerm(e.target.value)}
+                   onKeyDown={(e) => {
+                     if (e.key === "Enter" && searchTerm.trim()) {
+                       setIsPageLoading(true);
+                       setPageLoadingLayout("categories");
+                       setTimeout(() => {
+                         setShowSearchResults(true);
+                         setIsPageLoading(false);
+                       }, 500);
+                     }
+                   }}
+                 />
+                 <button 
+                  className="bg-[#00c09d] text-white px-6 py-2.5 hover:bg-[#00b08f] transition-colors"
+                  onClick={() => {
+                    if (searchTerm.trim()) {
+                      setIsPageLoading(true);
+                      setPageLoadingLayout("categories");
+                      setTimeout(() => {
+                        setShowSearchResults(true);
+                        setIsPageLoading(false);
+                      }, 500);
+                    }
+                  }}
+                 >
+                   <Search className="w-5 h-5" />
+                 </button>
+              </div>
+           </div>
+
+           {/* User & Cart Icons */}
+           <div className="flex items-center gap-6 shrink-0">
+              <button 
+                className="relative p-2 text-slate-700 hover:text-[#00c09d] transition-colors flex flex-col items-center gap-0.5 group"
+                onClick={onOpenCart}
+              >
+                 <ShoppingCart className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                 <span className="text-[10px] font-bold">Cart</span>
+                 {cartCount > 0 && (
+                   <span className="absolute top-1 right-1 bg-red-500 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full border border-white">
+                     {cartCount}
+                   </span>
+                 )}
+              </button>
+              <button 
+                className="flex flex-col items-center gap-0.5 text-slate-700 hover:text-[#00c09d] transition-colors group"
+                onClick={() => setIsProfileDrawerOpen(true)}
+              >
+                 <User className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                 <span className="text-[10px] font-bold">{currentSession ? "My Account" : "Login/SignUp"}</span>
+              </button>
+           </div>
+        </div>
+
+        {/* Navigation Bar */}
+        <div className="border-t border-gray-100 bg-white">
+           <div className="max-w-7xl mx-auto px-4 flex items-center gap-10 py-2">
+              <button 
+                className="flex items-center gap-2 bg-[#00c09d] text-white px-5 py-2 rounded text-sm font-bold hover:bg-[#00b08f] transition-all shadow-sm"
+                onClick={() => changeTabWithLoading("category", "categories")}
+              >
+                 <LayoutGrid className="w-4 h-4" />
+                 All Categories
+              </button>
+              <nav className="flex items-center gap-8 text-sm font-semibold text-slate-600">
+                 <button className="hover:text-[#00c09d] transition-colors" onClick={() => changeTabWithLoading("home", "main")}>Home</button>
+                 <button className="hover:text-[#00c09d] transition-colors" onClick={() => changeTabWithLoading("home", "main")}>Products</button>
+                 <button className="hover:text-[#00c09d] transition-colors">Popular Shops</button>
+                 <button className="hover:text-[#00c09d] transition-colors" onClick={onOpenBlog}>Latest News</button>
+                 <button className="hover:text-[#00c09d] transition-colors">Campaigns</button>
+              </nav>
+           </div>
+        </div>
+      </div>
+
+      <div className="md:max-w-7xl md:mx-auto md:w-full flex-grow flex flex-col">
       {/* 1. APP INSTALL BANNER */}
       {showBanner && bottomTab === "home" && !activeMainCategoryId && !activePopularCategory && (
         <div className="bg-white px-3 py-2.5 flex items-center justify-between border-b border-gray-100 z-50">
@@ -602,7 +884,7 @@ export default function Storefront({
             </button>
             <div className="w-9 h-9 border border-gray-100 rounded-lg flex items-center justify-center bg-white shadow-sm overflow-hidden shrink-0">
               <div className="bg-slate-800 text-[#00c09d] w-6 h-6 rounded flex items-center justify-center">
-                <SiteLogoComp className="w-4 h-4 text-[#00c09d]" iconOnly />
+                <SiteLogoComp settings={settings} className="w-4 h-4 text-[#00c09d]" iconOnly />
               </div>
             </div>
             <div className="flex flex-col">
@@ -684,7 +966,7 @@ export default function Storefront({
             </button>
           </header>
         ) : (
-          <div className="bg-[#00c09d] text-white w-full sticky top-0 z-40">
+          <div className="bg-[#00c09d] text-white w-full sticky top-0 z-40 md:hidden">
             <header className="px-4 pt-4 pb-3 flex items-center justify-between" style={{ backgroundColor: settings?.headerColor, color: settings?.headerTextColor }}>
               <div
                 className="flex items-center gap-2 cursor-pointer pl-1"
@@ -824,7 +1106,10 @@ export default function Storefront({
             </div>
 
             {/* RECTANGULAR CHIPS */}
-            <div className="flex gap-2.5 px-4 mt-4 overflow-x-auto scrollbar-none pb-2">
+            <div 
+              ref={mainCatRef}
+              className="flex gap-2.5 px-4 mt-4 overflow-x-auto scrollbar-none pb-2 scroll-smooth"
+            >
               {mainCategories.map((chip, i) => (
                 <div
                   key={chip.id}
@@ -930,7 +1215,13 @@ export default function Storefront({
                   </div>
 
                   {/* Horizontally scrolled items for this event */}
-                  <div className="px-4 pb-5 pt-2 flex gap-3 overflow-x-auto scrollbar-none snap-x relative">
+                  <div 
+                    ref={(el) => {
+                      if (el) eventRefs.current.set(ev.id, el);
+                      else eventRefs.current.delete(ev.id);
+                    }}
+                    className="px-4 pb-5 pt-2 flex gap-3 overflow-x-auto scrollbar-none snap-x relative scroll-smooth"
+                  >
                     {/* Extend background downward for consistency if needed, showing the real uploaded background */}
                     <div
                       className="absolute inset-0 top-0 h-full w-full z-0"
@@ -981,60 +1272,31 @@ export default function Storefront({
 
             <div className="w-full h-2 bg-[#f0f2f5] mt-1"></div>
 
-            {/* POPULAR CATEGORIES (CIRCLE GRID) */}
-            <div className="pt-4 px-4 pb-4 bg-white">
-              <h3 className="text-[13px] font-semibold text-slate-900 mb-4 ml-1">
-                Popular Categories
-              </h3>
-              <div className="grid grid-cols-4 gap-y-5 gap-x-2">
-                {[
-                  {
-                    n: "Electronics Device",
-                    i: "https://images.unsplash.com/photo-1523206489230-c012c64b2b48?w=100",
-                  },
-                  {
-                    n: "Fishing & Farming...",
-                    i: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=100",
-                  },
-                  {
-                    n: "Gaming Products",
-                    i: "https://images.unsplash.com/photo-1606144042873-77c41456b3b2?w=100",
-                  },
-                  {
-                    n: "Gifts",
-                    i: "https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=100",
-                  },
-                  {
-                    n: "Organic Fertilizer",
-                    i: "https://images.unsplash.com/photo-1585314062340-f1a5a7c9328d?w=100",
-                  },
-                  {
-                    n: "Packaging & Boxes",
-                    i: "https://images.unsplash.com/photo-1605600659908-0ef719419d41?w=100",
-                  },
-                  {
-                    n: "Sports & Out Doors",
-                    i: "https://images.unsplash.com/photo-1517649763962-0c623066013b?w=100",
-                  },
-                  {
-                    n: "TV & Home Appliances",
-                    i: "https://images.unsplash.com/photo-1550005973-b4d2417726af?w=100",
-                  },
-                ].map((c, i) => (
+            {/* POPULAR CATEGORIES (CIRCLE HORIZONTAL SCROLL) */}
+            <div className="pt-4 pb-4 bg-white">
+              <div className="px-4 mb-4 flex justify-between items-center">
+                 <h3 className="text-[13px] font-semibold text-slate-900">Popular Categories</h3>
+                 <button className="text-[#00c09d] text-[11px] font-bold" onClick={() => changeTabWithLoading("category", "categories")}>See All</button>
+              </div>
+              <div ref={popCatRef} className="flex gap-4 px-4 overflow-x-auto scrollbar-none snap-x scroll-smooth">
+                {mainCategories.map((c) => (
                   <div
-                    key={i}
-                    className="flex flex-col items-center gap-1.5 cursor-pointer"
-                    onClick={() => setActivePopularCategory(c.n)}
+                    key={c.id}
+                    className="flex flex-col items-center gap-1.5 cursor-pointer shrink-0 snap-center group"
+                    onClick={() => {
+                      setActivePopularCategory(c.name);
+                      changeTabWithLoading("home", "main");
+                    }}
                   >
-                    <div className="w-14 h-14 bg-slate-50 border border-transparent hover:border-[#00c09d] transition-colors rounded-full overflow-hidden flex items-center justify-center p-2.5 shrink-0 shadow-sm">
+                    <div className="w-16 h-16 bg-slate-50 border border-transparent group-hover:border-[#00c09d] transition-colors rounded-full overflow-hidden flex items-center justify-center p-2 shrink-0 shadow-sm">
                       <img
-                        src={c.i}
-                        alt=""
-                        className="w-full h-full object-cover mix-blend-multiply rounded-full opacity-95"
+                        src={c.icon || "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=100"}
+                        alt={c.name}
+                        className="w-full h-full object-cover mix-blend-multiply rounded-full opacity-95 group-hover:scale-110 transition-transform"
                       />
                     </div>
-                    <span className="text-[10px] sm:text-[11px] text-center text-slate-700 leading-tight font-medium break-words px-1 max-w-[70px]">
-                      {c.n}
+                    <span className="text-[10px] text-center text-slate-700 leading-tight font-medium w-16 line-clamp-2">
+                      {c.name}
                     </span>
                   </div>
                 ))}
@@ -1072,69 +1334,59 @@ export default function Storefront({
             )}
 
             {/* SHOP REEL */}
-            <div className="bg-white pt-4 pb-4">
-              <div className="flex items-center gap-1.5 px-4 mb-3">
-                <PlaySquare className="w-4 h-4 fill-[#db2777] text-white" />
-                <h3 className="text-[13px] font-semibold text-slate-900">
-                  Shop Reel
-                </h3>
-              </div>
+            <div className="bg-white py-4 md:py-8">
+              <div className="max-w-7xl mx-auto px-4">
+                <div className="flex items-center gap-1.5 mb-4 md:mb-6">
+                  <PlaySquare className="w-5 h-5 fill-[#db2777] text-white" />
+                  <h3 className="text-base font-bold text-slate-900">
+                    Shop Reel
+                  </h3>
+                </div>
 
-              <div className="flex gap-3 px-4 overflow-x-auto scrollbar-none snap-x">
-                {[
-                  {
-                    brand: "Quick pic",
-                    brandImg:
-                      "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=100",
-                    img: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=300",
-                  },
-                  {
-                    brand: "Deshi Dukan",
-                    brandImg:
-                      "https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?w=100",
-                    img: "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&q=80&w=300",
-                  },
-                ].map((r, i) => (
-                  <div
-                    key={i}
-                    className="w-36 shrink-0 aspect-[3/4] relative rounded-xl overflow-hidden snap-center bg-gray-100 cursor-pointer shadow-sm"
-                    onClick={onOpenBlog}
-                  >
-                    <img
-                      src={r.img}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/10"></div>
-                    <div className="absolute top-2 left-2 w-9 h-9 border-2 border-[#00c09d] rounded-full bg-white flex items-center justify-center p-0.5 overflow-hidden shadow">
+                <div className="flex gap-4 md:gap-6 overflow-x-auto scrollbar-none snap-x pb-4">
+                  {shopReels.map((r) => (
+                    <div
+                      key={r.id}
+                      className="w-36 md:w-48 shrink-0 aspect-[3/4.5] relative rounded-2xl overflow-hidden snap-center bg-gray-100 cursor-pointer shadow-md group border border-gray-100"
+                      onClick={onOpenBlog}
+                    >
                       <img
-                        src={r.brandImg}
-                        className="w-full h-full object-cover rounded-full"
-                        alt=""
+                        src={r.coverImage}
+                        alt={r.title}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                       />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20"></div>
+                      <div className="absolute top-3 left-3 w-10 h-10 border-2 border-[#00c09d] rounded-full bg-white flex items-center justify-center p-0.5 overflow-hidden shadow-lg">
+                        <img
+                          src={r.coverImage}
+                          className="w-full h-full object-cover rounded-full"
+                          alt=""
+                        />
+                      </div>
+                      <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-white">
+                        <span className="text-xs md:text-sm font-bold tracking-tight line-clamp-1">{r.title}</span>
+                        <ChevronRight className="w-4 h-4 bg-white/20 rounded-full p-0.5" />
+                      </div>
                     </div>
-                    <div className="absolute bottom-3 left-3 flex items-center justify-between right-3 text-white">
-                      <span className="text-[11px] font-bold">{r.brand}</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
 
             <div className="w-full h-2 bg-[#f0f2f5]"></div>
 
             {/* FEED TABS */}
-            <div className="flex mt-2 bg-white px-2 sticky top-[60px] z-30 border-b border-gray-100 overflow-x-auto hide-scroll">
-              {["For You", "Products", ...storeEvents.map((e) => e.title)].map(
-                (tab, idx) => {
-                  const ev = storeEvents.find((e) => e.title === tab);
-                  return (
-                    <button
-                      key={tab + idx}
-                      className={`flex-1 min-w-[max-content] px-4 py-3 text-[13px] font-bold justify-center border-b-2 relative flex items-center transition-all ${activeFeedTab === tab ? "border-[#00c09d] text-[#00c09d]" : "border-transparent text-gray-500"}`}
-                      onClick={() => setActiveFeedTab(tab)}
-                    >
+            <div className="bg-white border-b border-gray-100 sticky top-[60px] md:top-[124px] z-30">
+               <div className="max-w-7xl mx-auto flex overflow-x-auto hide-scroll px-2">
+                {["For You", "Products", ...storeEvents.map((e) => e.title)].map(
+                  (tab, idx) => {
+                    const ev = storeEvents.find((e) => e.title === tab);
+                    return (
+                      <button
+                        key={tab + idx}
+                        className={`px-6 py-4 text-sm font-bold border-b-2 relative flex items-center transition-all shrink-0 ${activeFeedTab === tab ? "border-[#00c09d] text-[#00c09d]" : "border-transparent text-gray-500 hover:text-slate-800"}`}
+                        onClick={() => setActiveFeedTab(tab)}
+                      >
                       {tab === "For You" && (
                         <Heart
                           className="mr-1.5 w-4 h-4 text-pink-500"
@@ -1165,112 +1417,63 @@ export default function Storefront({
                       <span>{tab}</span>
                     </button>
                   );
-                },
+                }
               )}
+               </div>
             </div>
 
             {/* PRODUCT FEED GRID */}
-            <div className="bg-[#f0f2f5] p-2 flex flex-col gap-2">
-              <div className="grid grid-cols-2 gap-2">
-                {(() => {
-                  const activeEv = storeEvents.find(
-                    (e) => e.title === activeFeedTab,
-                  );
-                  const filteredProducts = activeEv
-                    ? products.filter((p) => p.eventId === activeEv.id)
-                    : products;
-                  return filteredProducts.map((p) => (
-                    <div
-                      key={p.id}
-                      className="bg-white rounded-lg p-2.5 flex flex-col shadow-sm cursor-pointer border border-transparent hover:border-[#00c09d] transition-colors"
-                      onClick={() => onSelectProduct(p)}
-                    >
-                      {/* Image wrapper */}
-                      <div className="h-36 bg-gray-50 rounded mb-2 flex items-center justify-center overflow-hidden border border-gray-100 relative">
-                        <img
-                          src={p.gallery?.[0]}
-                          className="max-h-full max-w-full object-contain mix-blend-multiply"
-                          alt=""
+            <div className="bg-[#f0f2f5] py-6">
+              <div className="max-w-7xl mx-auto px-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                  {(() => {
+                    const activeEv = storeEvents.find(
+                      (e) => e.title === activeFeedTab,
+                    );
+                    const filteredProducts = activeEv
+                      ? products.filter((p) => p.eventId === activeEv.id)
+                      : products;
+                    
+                    const visibleProducts = filteredProducts.slice(0, visibleProductsCount);
+
+                    return visibleProducts.map((p, index) => (
+                      <React.Fragment key={p.id}>
+                        <ProductCard 
+                          p={p}
+                          wishlist={wishlist}
+                          onToggleWishlist={onToggleWishlist}
+                          onSelectProduct={onSelectProduct}
                         />
-
-                        {/* Heart toggle overlays */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggleWishlist(p.id);
-                          }}
-                          className="absolute top-2 right-2 w-7 h-7 bg-white/90 hover:bg-white active:scale-95 transition-all rounded-full shadow flex items-center justify-center cursor-pointer z-10"
-                          title={
-                            wishlist.includes(p.id)
-                              ? "Remove from wishlist"
-                              : "Add to wishlist"
-                          }
-                        >
-                          <Heart
-                            className={`w-4 h-4 ${wishlist.includes(p.id) ? "text-red-500 fill-current" : "text-gray-400"}`}
-                          />
-                        </button>
-                      </div>
-
-                      <div className="flex items-center gap-1 mb-1">
-                        <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
-                        <span className="text-[10px] text-gray-500">
-                          {p.rating} ({p.reviewsCount})
-                        </span>
-                        {p.isNewArrival && (
-                          <span className="text-pink-500 text-[10px] ml-auto">
-                            ✦ New
-                          </span>
+                        {/* Shadow loading (skeleton) after every 7 products */}
+                        {(index + 1) % 7 === 0 && (
+                          <div className="col-span-2 md:col-span-4 lg:col-span-5 xl:col-span-6 my-2">
+                            <FacebookSkeleton layout="feed" />
+                          </div>
                         )}
-                      </div>
+                      </React.Fragment>
+                    ));
+                  })()}
+                </div>
+              </div>
+            </div>
 
-                      <h4 className="text-[11px] font-medium text-slate-800 line-clamp-2 h-[32px] leading-tight mb-2 tracking-tight">
-                        {p.name}
-                      </h4>
-
-                      <div className="mt-auto">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[#00c09d] font-bold text-sm">
-                            ৳{p.salePrice || p.price}
-                          </span>
-                          {p.discountPercent > 0 && (
-                            <span className="bg-red-50 text-red-500 text-[9px] font-bold px-1 rounded">
-                              -{p.discountPercent}%
-                            </span>
-                          )}
-                        </div>
-                        {p.discountPercent > 0 && (
-                          <span className="text-gray-400 text-[10px] line-through mt-0.5 block">
-                            ৳{p.price}
-                          </span>
-                        )}
-                      </div>
+            {(() => {
+                const activeEv = storeEvents.find(e => e.title === activeFeedTab);
+                const filteredProducts = activeEv ? products.filter(p => p.eventId === activeEv.id) : products;
+                if (filteredProducts.length > visibleProductsCount) {
+                  return (
+                    <div className="py-5 flex justify-center">
+                      <button 
+                        onClick={() => setVisibleProductsCount(prev => prev + 27)}
+                        className="bg-[#00c09d] text-white text-[13px] font-bold px-8 py-2.5 rounded shadow-sm flex items-center gap-2 active:scale-95 transition-transform hover:bg-[#00b08f]"
+                      >
+                        Load More
+                      </button>
                     </div>
-                  ));
-                })()}
-              </div>
-
-              <div className="py-5 flex justify-center">
-                <button className="bg-[#00c09d] text-white text-[13px] font-bold px-5 py-2.5 rounded shadow-sm flex items-center gap-2 active:scale-95 transition-transform">
-                  Load More
-                  <div className="w-5 h-5 rounded-full border border-white flex items-center justify-center shrink-0">
-                    <svg
-                      className="w-3 h-3 -rotate-90"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M19 14l-7 7m0 0l-7-7m7 7V3"
-                      ></path>
-                    </svg>
-                  </div>
-                </button>
-              </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
           </div>
         )}
@@ -1316,88 +1519,47 @@ export default function Storefront({
                 </div>
               </div>
 
-              <div className="bg-white mt-1 px-4 py-3 flex items-center gap-2">
-                <div className="w-6 h-6 rounded bg-teal-50 overflow-hidden shrink-0">
-                  <img
-                    src={cat.icon}
-                    className="w-full h-full object-cover"
-                    alt=""
-                  />
-                </div>
-                <h3 className="font-semibold text-slate-800 text-sm tracking-tight">
-                  {cat.name}
-                </h3>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 mt-1 px-2 pb-6">
-                {products.map((p) => (
-                  <div
-                    key={p.id}
-                    className="bg-white rounded p-2 flex flex-col cursor-pointer border border-transparent shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
-                    onClick={() => onSelectProduct(p)}
-                  >
-                    <div className="h-36 bg-gray-50 rounded mb-2 flex items-center justify-center overflow-hidden border border-gray-100 relative">
+              <div className="max-w-7xl mx-auto px-4 py-6 md:py-10">
+                <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm mb-8 border border-gray-100">
+                  <div className="flex flex-col md:flex-row gap-8 items-center">
+                    <div className="w-full md:w-1/3 aspect-[4/3] rounded-xl overflow-hidden shadow-lg">
                       <img
-                        src={p.gallery?.[0]}
-                        className="max-h-full max-w-full object-contain mix-blend-multiply"
-                        alt=""
+                        src={cat.banner}
+                        className="w-full h-full object-cover"
+                        alt={cat.name}
                       />
-
-                      {/* Heart toggle overlays */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleWishlist(p.id);
-                        }}
-                        className="absolute top-2 right-2 w-7 h-7 bg-white/90 hover:bg-white active:scale-95 transition-all rounded-full shadow flex items-center justify-center cursor-pointer z-10"
-                        title={
-                          wishlist.includes(p.id)
-                            ? "Remove from wishlist"
-                            : "Add to wishlist"
-                        }
-                      >
-                        <Heart
-                          className={`w-4 h-4 ${wishlist.includes(p.id) ? "text-red-500 fill-current" : "text-gray-400"}`}
-                        />
-                      </button>
                     </div>
-
-                    <div className="flex items-center gap-1 mb-1">
-                      <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
-                      <span className="text-[10px] text-gray-500">
-                        {p.rating} ({p.reviewsCount})
-                      </span>
-                      {p.isNewArrival && (
-                        <span className="text-pink-500 text-[10px] ml-auto">
-                          ✦ New
-                        </span>
-                      )}
-                    </div>
-
-                    <h4 className="text-[11px] font-medium text-slate-800 line-clamp-2 h-[32px] leading-tight mb-2 tracking-tight">
-                      {p.name}
-                    </h4>
-
-                    <div className="mt-auto">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[#00c09d] font-bold text-sm">
-                          ৳{p.salePrice || p.price}
-                        </span>
-                        {p.discountPercent > 0 && (
-                          <span className="bg-amber-400 text-white text-[9px] font-bold px-1 rounded-full">
-                            -{p.discountPercent}%
-                          </span>
-                        )}
+                    <div className="flex-1 text-center md:text-left">
+                      <div className="flex items-center justify-center md:justify-start gap-3 mb-4">
+                        <div className="w-12 h-12 rounded-xl bg-teal-50 p-2 shadow-inner">
+                          <img
+                            src={cat.icon}
+                            className="w-full h-full object-contain"
+                            alt=""
+                          />
+                        </div>
+                        <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">
+                          {cat.name}
+                        </h1>
                       </div>
-                      {p.discountPercent > 0 && (
-                        <span className="text-gray-400 text-[10px] line-through mt-0.5 block">
-                          ৳{p.price}
-                        </span>
-                      )}
+                      <p className="text-gray-600 text-lg leading-relaxed max-w-2xl">
+                        Discover our premium collection of {cat.name}. We bring you the best quality products at competitive prices.
+                      </p>
                     </div>
                   </div>
-                ))}
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+                  {products.map((p) => (
+                    <ProductCard
+                      key={p.id}
+                      p={p}
+                      wishlist={wishlist}
+                      onToggleWishlist={onToggleWishlist}
+                      onSelectProduct={onSelectProduct}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
           );
@@ -1405,162 +1567,167 @@ export default function Storefront({
 
       {/* ======================= ACTIVE POPULAR CATEGORY VIEW ======================= */}
       {activePopularCategory && (
-        <div className="flex-grow flex flex-col bg-[#f0f2f5] pb-2">
-          <div className="bg-white px-4 py-3 pb-4 mb-1">
-            <div className="flex items-start justify-between">
-              <div className="flex flex-col">
-                <h2 className="text-lg font-bold text-slate-900 leading-tight">
-                  {activePopularCategory}
-                </h2>
-                <span className="text-[13px] text-gray-500">
-                  {((activePopularCategory.length * 15 + products.length) %
-                    150) +
-                    20}{" "}
-                  items found
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button className="flex items-center gap-1.5 border border-gray-300 rounded px-2.5 py-1 text-[12px] font-medium text-slate-700 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                  <AlignLeft className="w-3.5 h-3.5 text-gray-500" />
-                  Filter
-                </button>
-                <button
-                  className="flex items-center gap-1.5 border border-gray-300 rounded px-2.5 py-1 text-[12px] font-medium text-slate-700 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
-                  onClick={() => {
-                    setActivePopularCategory(null);
-                    changeTabWithLoading("category", "categories");
-                  }}
-                >
-                  <LayoutGrid className="w-3.5 h-3.5 text-gray-500" />
-                  Categories
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 px-2 pb-6 pt-1">
-            {products.map((p) => (
-              <div
-                key={p.id}
-                className="bg-white rounded p-2 flex flex-col cursor-pointer border border-transparent shadow-[0_1px_3px_rgba(0,0,0,0.05)]"
-                onClick={() => onSelectProduct(p)}
-              >
-                <div className="h-36 bg-gray-50 rounded mb-2 flex items-center justify-center overflow-hidden border border-gray-100 relative">
-                  <img
-                    src={p.gallery?.[0]}
-                    className="max-h-full max-w-full object-contain mix-blend-multiply"
-                    alt=""
-                  />
-
-                  {/* Heart toggle overlays */}
+        <div className="flex-grow flex flex-col bg-[#f0f2f5] pb-10">
+          <div className="bg-white border-b border-gray-100">
+            <div className="max-w-7xl mx-auto px-4 py-8 md:py-12">
+              <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+                <div className="flex flex-col text-left">
+                  <nav className="flex items-center gap-2 text-sm text-gray-400 mb-4">
+                    <span className="hover:text-[#00c09d] cursor-pointer">Home</span>
+                    <ChevronRight className="w-3 h-3" />
+                    <span className="text-slate-900 font-medium">Categories</span>
+                  </nav>
+                  <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">
+                    {activePopularCategory}
+                  </h2>
+                  <div className="flex items-center gap-2 mt-2">
+                    <div className="w-2 h-2 rounded-full bg-[#00c09d] animate-pulse"></div>
+                    <span className="text-sm text-gray-500 font-medium">
+                      {((activePopularCategory.length * 15 + products.length) % 150) + 20} items curated for you
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <button className="flex items-center gap-2 border border-gray-200 rounded-xl px-5 py-3 text-sm font-bold text-slate-700 bg-white hover:bg-gray-50 transition-all shadow-sm active:scale-95">
+                    <AlignLeft className="w-4 h-4 text-[#00c09d]" />
+                    Filter Results
+                  </button>
                   <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleWishlist(p.id);
+                    className="flex items-center gap-2 border border-gray-200 rounded-xl px-5 py-3 text-sm font-bold text-slate-700 bg-white hover:bg-gray-50 transition-all shadow-sm active:scale-95"
+                    onClick={() => {
+                      setActivePopularCategory(null);
+                      changeTabWithLoading("category", "categories");
                     }}
-                    className="absolute top-2 right-2 w-7 h-7 bg-white/90 hover:bg-white active:scale-95 transition-all rounded-full shadow flex items-center justify-center cursor-pointer z-10"
-                    title={
-                      wishlist.includes(p.id)
-                        ? "Remove from wishlist"
-                        : "Add to wishlist"
-                    }
                   >
-                    <Heart
-                      className={`w-4 h-4 ${wishlist.includes(p.id) ? "text-red-500 fill-current" : "text-gray-400"}`}
-                    />
+                    <LayoutGrid className="w-4 h-4 text-[#00c09d]" />
+                    View All Categories
                   </button>
                 </div>
-
-                <div className="flex items-center gap-1 mb-1">
-                  <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
-                  <span className="text-[10px] text-gray-500">
-                    {p.rating} ({p.reviewsCount})
-                  </span>
-                  {p.isNewArrival && (
-                    <span className="text-pink-500 text-[10px] ml-auto">
-                      ✦ New
-                    </span>
-                  )}
-                </div>
-
-                <h4 className="text-[11px] font-medium text-slate-800 line-clamp-2 h-[32px] leading-tight mb-2 tracking-tight">
-                  {p.name}
-                </h4>
-
-                <div className="mt-auto">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[#00c09d] font-bold text-sm">
-                      ৳{p.salePrice || p.price}
-                    </span>
-                    {p.discountPercent > 0 && (
-                      <span className="bg-amber-400 text-white text-[9px] font-bold px-1 rounded-full">
-                        -{p.discountPercent}%
-                      </span>
-                    )}
-                  </div>
-                  {p.discountPercent > 0 && (
-                    <span className="text-gray-400 text-[10px] line-through mt-0.5 block">
-                      ৳{p.price}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Dynamic Footer */}
-          <footer className="mt-8 border-t border-slate-100" style={{ backgroundColor: settings.footerColor, color: settings.footerTextColor }}>
-            <div className="px-6 py-10 flex flex-col gap-8">
-              <div className="flex flex-col gap-4">
-                 <div className="flex items-center gap-2">
-                    {settings.siteLogo ? (
-                      <img src={settings.siteLogo} className="h-8 object-contain" alt="" />
-                    ) : (
-                      <SiteLogoComp className="w-6 h-6" style={{ color: settings.primaryColor }} iconOnly />
-                    )}
-                    <span className="font-black text-xl tracking-tight">{settings.siteName}</span>
-                 </div>
-                 <p className="text-[11px] leading-relaxed opacity-70">
-                    {settings.footerText}
-                 </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-8">
-                <div className="flex flex-col gap-3">
-                  <h5 className="font-bold text-[13px]">Contact Info</h5>
-                  <div className="flex flex-col gap-2 text-[11px] opacity-80">
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-3.5 h-3.5" />
-                      <span>{settings.contactPhone}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-3.5 h-3.5" />
-                      <span>{settings.contactEmail}</span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <MapPin className="w-3.5 h-3.5 shrink-0" />
-                      <span>{settings.contactAddress}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex flex-col gap-3">
-                  <h5 className="font-bold text-[13px]">Follow Us</h5>
-                  <div className="flex gap-4">
-                    <a href={settings.facebookUrl} className="opacity-80 hover:opacity-100" target="_blank" rel="noreferrer"><Facebook className="w-5 h-5" /></a>
-                    <a href={settings.instagramUrl} className="opacity-80 hover:opacity-100" target="_blank" rel="noreferrer"><Instagram className="w-5 h-5" /></a>
-                    <a href={settings.youtubeUrl} className="opacity-80 hover:opacity-100" target="_blank" rel="noreferrer"><Youtube className="w-5 h-5" /></a>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-6 border-t border-slate-200/50 text-center">
-                <p className="text-[10px] opacity-60 font-medium">
-                  {settings.copyrightText}
-                </p>
               </div>
             </div>
-            <div className="h-[70px]" /> {/* Spacer for bottom tab bar */}
+          </div>
+
+          <div className="max-w-7xl mx-auto px-4 py-8">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+              {products.map((p) => (
+                <ProductCard
+                  key={p.id}
+                  p={p}
+                  wishlist={wishlist}
+                  onToggleWishlist={onToggleWishlist}
+                  onSelectProduct={onSelectProduct}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Enhanced Footer */}
+          <footer className="bg-[#1a1c1e] text-gray-400 pt-16 pb-8 mt-12 border-t border-gray-800">
+            <div className="max-w-7xl mx-auto px-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 text-left">
+               {/* Col 1 */}
+               <div className="flex flex-col gap-6">
+                  <div className="flex items-center gap-2 text-white">
+                     <SiteLogoComp settings={settings} className="w-10 h-10" />
+                     <span className="text-2xl font-black tracking-tight">{settings.siteName}</span>
+                  </div>
+                  <p className="text-[13px] leading-relaxed opacity-80">
+                     Our products are ensured directly from brands or authorized distributors. They're stored and shipped directly from our climate-controlled, GMP-certified warehouses!
+                  </p>
+                  <div className="flex flex-col gap-4 mt-2">
+                     <div className="flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center shrink-0 border border-slate-700">
+                           <MapPin className="w-4 h-4 text-[#00c09d]" />
+                        </div>
+                        <span className="text-[13px] pt-1.5">{settings.contactAddress}</span>
+                     </div>
+                     <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center shrink-0 border border-slate-700">
+                           <Phone className="w-4 h-4 text-[#00c09d]" />
+                        </div>
+                        <span className="text-[13px]">{settings.contactPhone}</span>
+                     </div>
+                     <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center shrink-0 border border-slate-700">
+                           <Mail className="w-4 h-4 text-[#00c09d]" />
+                        </div>
+                        <span className="text-[13px]">{settings.contactEmail}</span>
+                     </div>
+                  </div>
+               </div>
+
+               {/* Col 2 */}
+               <div>
+                  <h4 className="text-white font-bold mb-8 uppercase text-xs tracking-[0.2em]">About</h4>
+                  <ul className="space-y-4 text-[13px]">
+                     <li><button className="hover:text-white transition-colors">About Us</button></li>
+                     <li><button className="hover:text-white transition-colors">Terms and Conditions</button></li>
+                     <li><button className="hover:text-white transition-colors">Refund and Return Policy</button></li>
+                     <li><button className="hover:text-white transition-colors">Privacy Policy</button></li>
+                  </ul>
+               </div>
+
+               {/* Col 3 */}
+               <div>
+                  <h4 className="text-white font-bold mb-8 uppercase text-xs tracking-[0.2em]">Help</h4>
+                  <ul className="space-y-4 text-[13px]">
+                     <li><button className="hover:text-white transition-colors">Contact Us</button></li>
+                     <li><button className="hover:text-white transition-colors">FAQ</button></li>
+                     <li><button className="hover:text-white transition-colors">How to buy</button></li>
+                     <li><button className="hover:text-white transition-colors">Sell on {settings.siteName}</button></li>
+                     <li><button className="hover:text-white transition-colors">{settings.siteName} University</button></li>
+                  </ul>
+               </div>
+
+               {/* Col 4 */}
+               <div className="flex flex-col gap-10">
+                  <div>
+                     <h4 className="text-white font-bold mb-5 uppercase text-xs tracking-[0.2em]">Need Support?</h4>
+                     <div className="bg-slate-800/50 border border-slate-700 p-4 rounded-xl flex items-center justify-center gap-3 text-white font-bold text-lg shadow-inner">
+                        <Phone className="w-5 h-5 text-[#00c09d]" />
+                        {settings.contactPhone}
+                     </div>
+                  </div>
+                  <div>
+                     <h4 className="text-white font-bold mb-5 uppercase text-xs tracking-[0.2em]">Download App</h4>
+                     <div className="flex flex-col sm:flex-row lg:flex-col gap-3">
+                        <button className="h-11 w-full sm:w-36 lg:w-full bg-black border border-slate-700 rounded-lg flex items-center justify-center px-4 hover:border-white transition-colors">
+                           <img src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg" className="h-7" alt="Play Store" />
+                        </button>
+                        <button className="h-11 w-full sm:w-36 lg:w-full bg-black border border-slate-700 rounded-lg flex items-center justify-center px-4 hover:border-white transition-colors">
+                           <img src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Download_on_the_App_Store_Badge.svg" className="h-7" alt="App Store" />
+                        </button>
+                     </div>
+                  </div>
+               </div>
+            </div>
+
+            <div className="max-w-7xl mx-auto px-4 mt-16 pt-10 border-t border-slate-800 flex flex-col md:flex-row justify-between items-center gap-10">
+               <div className="flex flex-col items-center md:items-start gap-5">
+                  <span className="text-[10px] uppercase font-bold tracking-[0.3em] text-gray-500">Follow us on</span>
+                  <div className="flex gap-4">
+                     <button className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center hover:bg-[#1877F2] hover:border-[#1877F2] transition-all transform hover:-translate-y-1"><Facebook className="w-5 h-5 text-white" /></button>
+                     <button className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center hover:bg-[#E4405F] hover:border-[#E4405F] transition-all transform hover:-translate-y-1"><Instagram className="w-5 h-5 text-white" /></button>
+                     <button className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center hover:bg-[#FF0000] hover:border-[#FF0000] transition-all transform hover:-translate-y-1"><Youtube className="w-5 h-5 text-white" /></button>
+                  </div>
+               </div>
+               <div className="flex flex-col items-center md:items-end gap-5">
+                  <span className="text-[10px] uppercase font-bold tracking-[0.3em] text-gray-500">Payments Accepted</span>
+                  <div className="flex flex-wrap gap-3 justify-center md:justify-end">
+                     <div className="h-10 px-3 bg-white rounded flex items-center justify-center grayscale hover:grayscale-0 transition-all cursor-pointer"><img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/Visa_Inc._logo.svg" className="h-4" alt="" /></div>
+                     <div className="h-10 px-3 bg-white rounded flex items-center justify-center grayscale hover:grayscale-0 transition-all cursor-pointer"><img src="https://brand.mastercard.com/content/dam/mccom/brandcenter/thumbnails/mastercard_vrt_rev_92px.png" className="h-6" alt="" /></div>
+                     <div className="h-10 px-3 bg-white rounded flex items-center justify-center grayscale hover:grayscale-0 transition-all cursor-pointer"><img src="https://upload.wikimedia.org/wikipedia/commons/b/b5/PayPal.svg" className="h-5" alt="" /></div>
+                     <div className="h-10 px-3 bg-white rounded flex items-center justify-center grayscale hover:grayscale-0 transition-all cursor-pointer text-[#d82d44] font-bold text-sm">bkash</div>
+                     <div className="h-10 px-3 bg-white rounded flex items-center justify-center grayscale hover:grayscale-0 transition-all cursor-pointer text-[#f7941d] font-bold text-sm">nagad</div>
+                  </div>
+               </div>
+            </div>
+
+            <div className="text-center mt-12 pt-8 border-t border-slate-800/50">
+               <p className="text-[11px] text-gray-600 font-medium tracking-wide">
+                  © 2025 {settings.siteName}. All rights reserved.
+               </p>
+            </div>
+            <div className="h-[70px] lg:hidden" /> {/* Spacer for mobile bottom tab bar */}
           </footer>
         </div>
       )}
@@ -1669,64 +1836,41 @@ export default function Storefront({
           onSelectProduct={onSelectProduct}
           onAddToCart={onAddToCart}
           initialTab="favorites"
+          settings={settings}
+          onLoginTrigger={() => {
+            setShowAuthModal(true);
+            setAuthStep("phone");
+          }}
         />
       )}
 
-      {bottomTab === "profile" &&
-        (() => {
-          if (!currentSession) {
-            return (
-              <div className="flex-grow bg-[#f0f2f5] p-4 flex flex-col justify-center min-h-[calc(100vh-140px)] w-full">
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col items-center">
-                  <div className="w-14 h-14 bg-teal-50 rounded-full flex items-center justify-center mb-4 text-[#00c09d]">
-                    <User className="w-7 h-7" />
-                  </div>
-
-                  <h3 className="text-sm font-bold text-slate-800 text-center uppercase tracking-normal">
-                    Log In Required
-                  </h3>
-                  <p className="text-[12px] text-gray-500 text-center mt-1 mb-6 leading-relaxed max-w-[280px]">
-                    Log in to view your profile, manage addresses, and check
-                    order history.
-                  </p>
-
-                  <button
-                    onClick={() => {
-                      setShowAuthModal(true);
-                      setAuthStep("phone");
-                    }}
-                    className="w-full bg-[#00c09d] hover:bg-[#00b08f] text-white text-sm font-bold py-3.5 rounded-lg shadow-sm transition-all focus:outline-none"
-                  >
-                    Login / Sign Up
-                  </button>
-                </div>
-              </div>
-            );
-          }
-
-          return (
-            <AccountPanel
-              currentSession={currentSession}
-              orders={orders}
-              onLogout={() => {
-                onLogoutSession();
-                changeTabWithLoading("home", "main");
-              }}
-              wishlist={wishlist}
-              products={products}
-              onOpenCart={onOpenCart}
-              onClose={() => changeTabWithLoading("home", "main")}
-              onToggleWishlist={onToggleWishlist}
-              onSelectProduct={onSelectProduct}
-              initialTab={profileActiveTab}
-              onTabChange={(tabId) => setProfileActiveTab(tabId)}
-            />
-          );
-        })()}
+      {bottomTab === "profile" && (
+        <AccountPanel
+          currentSession={currentSession}
+          orders={orders}
+          onLogout={() => {
+            onLogoutSession();
+            changeTabWithLoading("home", "main");
+          }}
+          wishlist={wishlist}
+          products={products}
+          onOpenCart={onOpenCart}
+          onClose={() => changeTabWithLoading("home", "main")}
+          onToggleWishlist={onToggleWishlist}
+          onSelectProduct={onSelectProduct}
+          initialTab={profileActiveTab}
+          onTabChange={(tabId) => setProfileActiveTab(tabId)}
+          settings={settings}
+          onLoginTrigger={() => {
+            setShowAuthModal(true);
+            setAuthStep("phone");
+          }}
+        />
+      )}
         </>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 lg:max-w-md lg:mx-auto bg-white border-t border-gray-150 flex justify-around items-center h-[60px] pb-safe-area shadow-[0_-2px_10px_rgba(0,0,0,0.03)] z-[100]">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-150 flex justify-around items-center h-[60px] pb-safe-area shadow-[0_-2px_10px_rgba(0,0,0,0.03)] z-[100] md:hidden">
         {[
           { id: "home", label: "Home", icon: Home },
           { id: "category", label: "Category", icon: LayoutGrid },
@@ -1770,7 +1914,7 @@ export default function Storefront({
             className="fixed inset-0 bg-black/40 z-[110] backdrop-blur-[1px] animate-fade-in"
             onClick={() => setIsProfileDrawerOpen(false)}
           ></div>
-          <div className="fixed top-0 bottom-0 right-[calc(max(0px,100vw-448px)/2)] w-[82%] sm:w-[340px] max-w-[345px] bg-white z-[120] shadow-2xl flex flex-col pt-0 animate-slide-left overflow-hidden">
+          <div className="fixed top-0 bottom-0 right-[calc(max(0px,100vw-448px)/2)] w-[82%] sm:w-[340px] max-w-[345px] bg-white z-[120] shadow-2xl flex flex-col pt-0 animate-slide-left overflow-hidden md:right-0 md:rounded-l-2xl">
             <AccountPanel
               currentSession={currentSession}
               orders={orders}
@@ -1789,6 +1933,7 @@ export default function Storefront({
               }}
               onAddToCart={onAddToCart}
               initialTab="menu"
+              settings={settings}
               onLoginTrigger={() => {
                 setIsProfileDrawerOpen(false);
                 setShowAuthModal(true);
@@ -1808,12 +1953,12 @@ export default function Storefront({
 
       {/* ======================= AUTH MODAL ======================= */}
       {showAuthModal && (
-        <div className="fixed inset-0 z-[130] flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div className="fixed inset-0 z-[130] flex items-end md:items-center justify-center p-0 md:p-4">
           <div
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setShowAuthModal(false)}
           ></div>
-          <div className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-2xl p-6 relative z-10 animate-fade-in flex flex-col items-center">
+          <div className="bg-white w-full md:max-w-sm rounded-t-3xl md:rounded-2xl p-6 relative z-10 animate-fade-in flex flex-col items-center">
             <button
               className="absolute top-4 right-4 p-1 text-slate-500 hover:bg-slate-100 rounded-full"
               onClick={() => setShowAuthModal(false)}
@@ -1822,7 +1967,7 @@ export default function Storefront({
             </button>
 
             <div className="w-14 h-14 mb-4">
-              <SiteLogoComp className="w-full h-full object-contain" />
+              <SiteLogoComp settings={settings} className="w-full h-full object-contain" />
             </div>
 
             {authStep === "phone" ? (
@@ -1854,9 +1999,13 @@ export default function Storefront({
 
                 <button
                   onClick={handleSendOtp}
-                  className="w-full bg-[#00c09d] hover:bg-[#00b08f] text-white font-medium py-3.5 rounded-lg shadow-sm transition-colors text-[16px]"
+                  disabled={authLoading}
+                  className={`w-full ${authLoading ? 'bg-[#00c09d]/70' : 'bg-[#00c09d] hover:bg-[#00b08f]'} text-white font-medium py-3.5 rounded-lg shadow-sm transition-colors text-[16px] flex items-center justify-center gap-2`}
                 >
-                  Send OTP
+                  {authLoading && (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  )}
+                  {authLoading ? "Sending..." : "Send OTP"}
                 </button>
               </>
             ) : authStep === "otp" ? (
@@ -1899,13 +2048,13 @@ export default function Storefront({
                   </button>
 
                   <div className="w-full flex justify-between gap-1 sm:gap-2 mb-8">
-                    {[0, 1, 2, 3, 4, 5].map((index) => (
+                    {[0, 1, 2, 3].map((index) => (
                       <input
                         key={index}
                         id={`otp-input-${index}`}
                         type="text"
                         maxLength={1}
-                        className="w-[42px] sm:w-[48px] h-[52px] border border-gray-300 rounded-lg text-center text-2xl font-medium focus:border-[#00c09d] outline-none shadow-sm"
+                        className="w-[60px] sm:w-[70px] h-[52px] border border-gray-300 rounded-lg text-center text-2xl font-medium focus:border-[#00c09d] outline-none shadow-sm"
                         value={otpArray[index] || ""}
                         onChange={(e) => {
                           const val = e.target.value.replace(/[^0-9]/g, "");
@@ -1913,7 +2062,7 @@ export default function Storefront({
                             const newOtpArray = [...otpArray];
                             newOtpArray[index] = val[val.length - 1];
                             setOtpArray(newOtpArray);
-                            if (index < 5) {
+                            if (index < 3) {
                               setTimeout(() => {
                                 document
                                   .getElementById(`otp-input-${index + 1}`)
@@ -1947,9 +2096,13 @@ export default function Storefront({
                   </div>
                   <button
                     onClick={handleVerifyOtp}
-                    className="w-full bg-[#00c09d] hover:bg-[#00b08f] text-white font-medium py-3.5 rounded-lg shadow-sm transition-colors text-[16px] mb-5 mt-2"
+                    disabled={authLoading}
+                    className={`w-full ${authLoading ? 'bg-[#00c09d]/70' : 'bg-[#00c09d] hover:bg-[#00b08f]'} text-white font-medium py-3.5 rounded-lg shadow-sm transition-colors text-[16px] mb-5 mt-2 flex items-center justify-center gap-2`}
                   >
-                    Verify
+                    {authLoading && (
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    )}
+                    {authLoading ? "Verifying..." : "Verify"}
                   </button>
                   <p className="text-slate-500 text-[15px] text-center w-full">
                     Code expires in {formatOtpTime(otpTimer)}
@@ -2097,6 +2250,135 @@ export default function Storefront({
           </div>
         </div>
       )}
+      {/* FOOTER SECTION (Packly Style) */}
+      <footer className="bg-[#142e43] text-white pt-16 pb-8 px-4 mt-auto">
+         <div className="max-w-7xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
+               {/* Brand Column */}
+               <div className="flex flex-col gap-6">
+                  <div className="flex items-center gap-2 cursor-pointer" onClick={() => changeTabWithLoading("home", "main")}>
+                     <div className="bg-white p-1 rounded-lg">
+                        <SiteLogoComp settings={settings} className="w-10 h-10 object-contain" />
+                     </div>
+                     <span className="font-black text-3xl tracking-tighter">{settings.siteName}</span>
+                  </div>
+                  <p className="text-slate-300 text-sm leading-relaxed max-w-sm">
+                     {settings.siteDescription || `Our products are ensured directly from brands or authorized distributors. They're stored and shipped directly from our climate-controlled, GMP-certified warehouses.`}
+                  </p>
+                  <div className="flex flex-col gap-4">
+                     <div className="flex items-start gap-4">
+                        <div className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center shrink-0">
+                           <MapPin className="w-5 h-5 text-[#00c09d]" />
+                        </div>
+                        <div>
+                           <h4 className="font-bold text-xs uppercase text-slate-400 tracking-widest mb-1">Office Address</h4>
+                           <p className="text-sm text-slate-200">{settings.address || "House# 44, Rd No. 2/A, Dhanmondi, Dhaka 1209"}</p>
+                        </div>
+                     </div>
+                     <div className="flex items-start gap-4">
+                        <div className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center shrink-0">
+                           <Phone className="w-5 h-5 text-[#00c09d]" />
+                        </div>
+                        <div>
+                           <h4 className="font-bold text-xs uppercase text-slate-400 tracking-widest mb-1">Phone Number</h4>
+                           <p className="text-sm text-slate-200">{settings.contactPhone || "+8809678045555"}</p>
+                        </div>
+                     </div>
+                     <div className="flex items-start gap-4">
+                        <div className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center shrink-0">
+                           <Mail className="w-5 h-5 text-[#00c09d]" />
+                        </div>
+                        <div>
+                           <h4 className="font-bold text-xs uppercase text-slate-400 tracking-widest mb-1">Email Support</h4>
+                           <p className="text-sm text-slate-200">{settings.contactEmail || "info@packly.com"}</p>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+
+               {/* Links Column 1 */}
+               <div className="flex flex-col gap-8">
+                  <div>
+                     <h3 className="text-lg font-bold mb-6 border-b border-white/10 pb-2 inline-block">About Us</h3>
+                     <ul className="flex flex-col gap-4 text-sm text-slate-300">
+                        <li className="hover:text-[#00c09d] cursor-pointer transition-colors">About Us</li>
+                        <li className="hover:text-[#00c09d] cursor-pointer transition-colors">Terms and Conditions</li>
+                        <li className="hover:text-[#00c09d] cursor-pointer transition-colors">Refund and Return Policy</li>
+                        <li className="hover:text-[#00c09d] cursor-pointer transition-colors">Privacy Policy</li>
+                     </ul>
+                  </div>
+               </div>
+
+               {/* Links Column 2 */}
+               <div className="flex flex-col gap-8">
+                  <div>
+                     <h3 className="text-lg font-bold mb-6 border-b border-white/10 pb-2 inline-block">Customer Help</h3>
+                     <ul className="flex flex-col gap-4 text-sm text-slate-300">
+                        <li className="hover:text-[#00c09d] cursor-pointer transition-colors">Contact Us</li>
+                        <li className="hover:text-[#00c09d] cursor-pointer transition-colors">FAQ</li>
+                        <li className="hover:text-[#00c09d] cursor-pointer transition-colors">How to buy</li>
+                        <li className="hover:text-[#00c09d] cursor-pointer transition-colors">Sell on {settings.siteName}</li>
+                        <li className="hover:text-[#00c09d] cursor-pointer transition-colors">{settings.siteName} University</li>
+                     </ul>
+                  </div>
+               </div>
+
+               {/* Support & Apps Column */}
+               <div className="flex flex-col gap-10">
+                  <div>
+                     <h3 className="text-lg font-bold mb-4">Need Support?</h3>
+                     <div className="bg-white/5 border border-white/10 p-4 rounded-xl flex items-center justify-center gap-3">
+                        <Phone className="w-5 h-5 text-[#00c09d]" />
+                        <span className="text-xl font-bold font-mono tracking-tighter">{settings.contactPhone}</span>
+                     </div>
+                  </div>
+                  <div>
+                     <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Download Our App</h3>
+                     <div className="flex flex-col gap-3">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg" className="h-10 w-auto cursor-pointer" alt="Play Store" />
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Download_on_the_App_Store_Badge.svg" className="h-10 w-auto cursor-pointer" alt="App Store" />
+                     </div>
+                  </div>
+               </div>
+            </div>
+
+            {/* Bottom Bar */}
+            <div className="pt-10 border-t border-white/5 flex flex-col lg:flex-row items-center justify-between gap-8">
+               <div className="flex items-center gap-6">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Follow us on</span>
+                  <div className="flex gap-4">
+                     <div className="w-9 h-9 bg-white/5 hover:bg-[#00c09d] rounded-full flex items-center justify-center cursor-pointer transition-all">
+                        <Facebook className="w-5 h-5" />
+                     </div>
+                     <div className="w-9 h-9 bg-white/5 hover:bg-[#00c09d] rounded-full flex items-center justify-center cursor-pointer transition-all">
+                        <Instagram className="w-5 h-5" />
+                     </div>
+                     <div className="w-9 h-9 bg-white/5 hover:bg-[#00c09d] rounded-full flex items-center justify-center cursor-pointer transition-all">
+                        <Youtube className="w-5 h-5" />
+                     </div>
+                  </div>
+               </div>
+
+               <div className="flex flex-col items-center lg:items-end gap-3">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Payments Accepted</span>
+                  <div className="flex gap-2 flex-wrap justify-center">
+                     <img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/Visa_Inc._logo.svg" className="h-4 w-auto grayscale brightness-200" alt="Visa" />
+                     <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" className="h-4 w-auto grayscale brightness-200" alt="Mastercard" />
+                     <img src="https://upload.wikimedia.org/wikipedia/commons/b/b5/PayPal.svg" className="h-4 w-auto grayscale brightness-200" alt="Paypal" />
+                     <img src="https://placehold.co/60x20/white/slate?text=bkash" className="h-4 w-auto rounded px-1" alt="bkash" />
+                     <img src="https://placehold.co/60x20/white/slate?text=Nagad" className="h-4 w-auto rounded px-1" alt="Nagad" />
+                  </div>
+               </div>
+            </div>
+
+            <div className="mt-12 text-center border-t border-white/5 pt-8">
+               <p className="text-xs text-slate-500 font-medium">
+                  {settings.copyrightText || `© ${new Date().getFullYear()} ${settings.siteName}. All rights reserved.`}
+               </p>
+            </div>
+         </div>
+      </footer>
+      </div>
     </div>
   );
 }

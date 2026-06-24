@@ -551,7 +551,7 @@ export default function CartAndCheckout({
                   {/* Merchant Bar */}
                   <div className="flex items-center gap-2 py-1 text-slate-700 text-xs font-semibold">
                     <Store className="w-4 h-4 text-slate-400" />
-                    <span>KenakataBD</span>
+                    <span>{settings.siteName}</span>
                     <span className="text-slate-400 font-normal">&gt;</span>
                   </div>
 

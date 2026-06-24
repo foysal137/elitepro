@@ -12,7 +12,8 @@ import {
   MainCategory,
   HeroBanner,
   StoreEvent,
-  PromoBanner
+  PromoBanner,
+  ShopReel
 } from "./types";
 import Storefront from "./components/Storefront";
 import ProductDetail from "./components/ProductDetail";
@@ -38,6 +39,7 @@ export default function App() {
   const [heroBanners, setHeroBanners] = useState<HeroBanner[]>([]);
   const [storeEvents, setStoreEvents] = useState<StoreEvent[]>([]);
   const [promoBanners, setPromoBanners] = useState<PromoBanner[]>([]);
+  const [shopReels, setShopReels] = useState<ShopReel[]>([]);
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'warning', message: string } | null>(null);
 
   // Interactive local states
@@ -135,7 +137,7 @@ export default function App() {
   // Update document title and theme dynamically when settings load
   useEffect(() => {
     if (settings) {
-      document.title = settings.siteName || "KenakataBD";
+      document.title = settings.siteName || "Storefront";
       
       // Update Favicon
       let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
@@ -169,7 +171,8 @@ export default function App() {
         resMainCat,
         resHero,
         resEvents,
-        resPromo
+        resPromo,
+        resReels
       ] = await Promise.all([
         fetch("/api/products").then(r => r.json()),
         fetch("/api/categories").then(r => r.json()),
@@ -182,7 +185,8 @@ export default function App() {
         fetch("/api/main-categories").then(r => r.json()),
         fetch("/api/hero-banners").then(r => r.json()),
         fetch("/api/store-events").then(r => r.json()),
-        fetch("/api/promo-banners").then(r => r.json())
+        fetch("/api/promo-banners").then(r => r.json()),
+        fetch("/api/shop-reels").then(r => r.json())
       ]);
 
       setProducts(Array.isArray(resProd) ? resProd : []);
@@ -197,6 +201,7 @@ export default function App() {
       setHeroBanners(Array.isArray(resHero) ? resHero : []);
       setStoreEvents(Array.isArray(resEvents) ? resEvents : []);
       setPromoBanners(Array.isArray(resPromo) ? resPromo : []);
+      setShopReels(Array.isArray(resReels) ? resReels : []);
     } catch (e) {
       console.error("Failed to synchronise DB streams from Express server API", e);
       setError("Failed to connect to the server. Please check your internet or try again later.");
@@ -398,6 +403,7 @@ export default function App() {
           heroBanners={heroBanners}
           storeEvents={storeEvents}
           promoBanners={promoBanners}
+          shopReels={shopReels}
           settings={settings}
           onRefreshAllData={fetchEntireData}
           onNotify={(type, message) => setNotification({ type, message })}
@@ -426,6 +432,7 @@ export default function App() {
           heroBanners={heroBanners}
           storeEvents={storeEvents}
           promoBanners={promoBanners}
+          shopReels={shopReels}
           onOpenCart={() => setIsCartOpen(true)}
           cartCount={cartItems.reduce((acc, item) => acc + item.quantity, 0)}
           onSelectProduct={(p) => setSelectedProduct(p)}

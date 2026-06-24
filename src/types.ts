@@ -183,6 +183,8 @@ export interface AppSettings {
   sslIsLive?: boolean;
   fbPixelId: string;
   googleAnalyticsId: string;
+  googleClientId?: string;
+  facebookAppId?: string;
   
   // Specific Integrations
   bulkSmsApiKey?: string;
@@ -257,4 +259,11 @@ export interface StoreEvent {
   banner: string;
   targetUrl?: string;
   expiryTime?: string;
+}
+
+export interface ShopReel {
+  id: string;
+  title: string;
+  handle: string;
+  coverImage: string;
 }

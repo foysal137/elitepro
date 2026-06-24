@@ -46,7 +46,8 @@ import {
   MainCategory,
   HeroBanner,
   StoreEvent,
-  PromoBanner
+  PromoBanner,
+  ShopReel
 } from "../types";
 
 interface AdminPanelProps {
@@ -60,6 +61,7 @@ interface AdminPanelProps {
   heroBanners: HeroBanner[];
   storeEvents: StoreEvent[];
   promoBanners: PromoBanner[];
+  shopReels: ShopReel[];
   settings: AppSettings;
   onRefreshAllData: () => void;
   onClose: () => void;
@@ -77,6 +79,7 @@ export default function AdminPanel({
   heroBanners,
   storeEvents,
   promoBanners,
+  shopReels,
   settings,
   onRefreshAllData,
   onClose,
@@ -95,6 +98,7 @@ export default function AdminPanel({
     | "reviews"
     | "settings"
     | "logs"
+    | "shop-reels"
   >("dashboard");
 
   // Admin Login states
@@ -198,6 +202,13 @@ export default function AdminPanel({
   const [mcName, setMcName] = useState("");
   const [mcIcon, setMcIcon] = useState("");
   const [mcBanner, setMcBanner] = useState("");
+
+  // ShopReel management states
+  const [showAddReelModal, setShowAddReelModal] = useState(false);
+  const [reelTitle, setReelTitle] = useState("");
+  const [reelHandle, setReelHandle] = useState("");
+  const [reelCover, setReelCover] = useState("");
+  const [editReelId, setEditReelId] = useState<string | null>(null);
   const [mcUrl, setMcUrl] = useState("");
 
   // Add HeroBanner form states
@@ -255,6 +266,8 @@ export default function AdminPanel({
   const [lowStockThresh, setLowStockThresh] = useState("5");
   const [fbId, setFbId] = useState("");
   const [gaId, setGaId] = useState("");
+  const [googleClientId, setGoogleClientId] = useState("");
+  const [facebookAppId, setFacebookAppId] = useState("");
   const [otpToggled, setOtpToggled] = useState(false);
   const [autoCourierSubmit, setAutoCourierSubmit] = useState(true);
   const [defaultCourier, setDefaultCourier] = useState<any>("Steadfast");
@@ -543,6 +556,8 @@ export default function AdminPanel({
     setLowStockThresh(settings.lowStockThreshold?.toString() || "5");
     setFbId(settings.fbPixelId || "");
     setGaId(settings.googleAnalyticsId || "");
+    setGoogleClientId(settings.googleClientId || "");
+    setFacebookAppId(settings.facebookAppId || "");
     setOtpToggled(settings.otpVerificationEnabled || false);
     setAutoCourierSubmit(settings.autoCourierRequest || false);
     setDefaultCourier(settings.defaultCourier || "Steadfast");
@@ -607,6 +622,8 @@ export default function AdminPanel({
           lowStockThreshold: Number(lowStockThresh),
           fbPixelId: fbId,
           googleAnalyticsId: gaId,
+          googleClientId: googleClientId,
+          facebookAppId: facebookAppId,
           otpVerificationEnabled: otpToggled,
           autoCourierRequest: autoCourierSubmit,
           defaultCourier: defaultCourier,
@@ -849,6 +866,40 @@ export default function AdminPanel({
         onRefreshAllData();
         fetchStatsAndChronicles();
         alert("Category added successfully.");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleAddReel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = { title: reelTitle, handle: reelHandle, coverImage: reelCover };
+    try {
+      const url = editReelId ? `/api/shop-reels/${editReelId}` : "/api/shop-reels";
+      const method = editReelId ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        setShowAddReelModal(false);
+        onRefreshAllData();
+        if (onNotify) onNotify("success", editReelId ? "Reel updated!" : "New reel added!");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteReel = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this reel?")) return;
+    try {
+      const res = await fetch(`/api/shop-reels/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        onRefreshAllData();
+        if (onNotify) onNotify("warning", "Reel removed!");
       }
     } catch (e) {
       console.error(e);
@@ -1262,6 +1313,7 @@ export default function AdminPanel({
             { id: "payments", label: "Payments & Reports", icon: CreditCard },
             { id: "reviews", label: "Reviews & Staff", icon: MessageSquare },
             { id: "settings", label: "Engine Settings", icon: Settings },
+            { id: "shop-reels", label: "Shop Reel", icon: Smartphone },
             { id: "logs", label: "Security & Telemetry", icon: FileText, badge: systemLogs.length }
           ].map((tab) => {
             const TabIcon = tab.icon;
@@ -3651,6 +3703,39 @@ export default function AdminPanel({
                     </div>
                   </div>
 
+                  {/* SOCIAL LOGIN */}
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
+                      <ShieldCheck className="w-4 h-4 text-blue-400" />
+                      <h5 className="text-xs font-extrabold text-white uppercase tracking-widest">Social Login Configuration</h5>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-slate-400">Google OAuth Client ID</label>
+                        <input 
+                          type="text"
+                          value={googleClientId}
+                          onChange={(e) => setGoogleClientId(e.target.value)}
+                          placeholder="e.g. 12345678-xxxx.apps.googleusercontent.com"
+                          className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-sm text-slate-100 font-mono focus:border-blue-500 focus:outline-none transition-colors"
+                        />
+                        <p className="text-[10px] text-slate-500 mt-1">Required for Google One-Tap and standard Google Sign-In.</p>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-slate-400">Facebook App ID</label>
+                        <input 
+                          type="text"
+                          value={facebookAppId}
+                          onChange={(e) => setFacebookAppId(e.target.value)}
+                          placeholder="e.g. 1029384756..."
+                          className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-sm text-slate-100 font-mono focus:border-blue-500 focus:outline-none transition-colors"
+                        />
+                        <p className="text-[10px] text-slate-500 mt-1">Required to enable Facebook login for users.</p>
+                      </div>
+                    </div>
+                  </div>
+
                 </div>
               )}
 
@@ -3744,6 +3829,148 @@ export default function AdminPanel({
                 })
               )}
             </div>
+          </div>
+        )}
+
+        {/* SHOP REEL MANAGEMENT */}
+        {activeTab === "shop-reels" && (
+          <div className="bg-slate-950 border border-slate-800 p-6 rounded-3xl text-left flex flex-col gap-6 animate-fade-in">
+             <div className="flex justify-between items-center">
+                <div>
+                   <h2 className="text-xl font-bold text-white">Shop Reel Management</h2>
+                   <p className="text-xs text-slate-500">Add or edit reels displayed on the storefront</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setEditReelId(null);
+                    setReelTitle("");
+                    setReelHandle("");
+                    setReelCover("");
+                    setShowAddReelModal(true);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-lg"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add New Reel
+                </button>
+             </div>
+
+             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {shopReels.map((reel) => (
+                   <div key={reel.id} className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden group relative">
+                      <img src={reel.coverImage} className="w-full aspect-[3/4] object-cover opacity-60 group-hover:opacity-100 transition-opacity" alt={reel.title} />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-3">
+                         <span className="text-white font-bold text-xs">{reel.title}</span>
+                         <span className="text-[10px] text-slate-400">@{reel.handle}</span>
+                      </div>
+                      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                         <button 
+                           onClick={() => {
+                             setEditReelId(reel.id);
+                             setReelTitle(reel.title);
+                             setReelHandle(reel.handle);
+                             setReelCover(reel.coverImage);
+                             setShowAddReelModal(true);
+                           }}
+                           className="bg-white/20 hover:bg-white/40 p-1.5 rounded-lg text-white backdrop-blur-md"
+                         >
+                            <Edit3 className="w-3.5 h-3.5" />
+                         </button>
+                         <button 
+                           onClick={() => handleDeleteReel(reel.id)}
+                           className="bg-rose-500/20 hover:bg-rose-500/40 p-1.5 rounded-lg text-rose-400 backdrop-blur-md"
+                         >
+                            <Trash2 className="w-3.5 h-3.5" />
+                         </button>
+                      </div>
+                   </div>
+                ))}
+             </div>
+          </div>
+        )}
+
+        {/* REEL ADD/EDIT MODAL */}
+        {showAddReelModal && (
+          <div className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+             <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl animate-scale-up">
+                <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+                   <h3 className="text-white font-bold">{editReelId ? "Edit Reel" : "Add New Shop Reel"}</h3>
+                   <button onClick={() => setShowAddReelModal(false)} className="text-slate-400 hover:text-white">
+                      <X className="w-5 h-5" />
+                   </button>
+                </div>
+                <form onSubmit={handleAddReel} className="p-6 flex flex-col gap-4">
+                   <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Reel Title</label>
+                      <input 
+                        type="text"
+                        value={reelTitle}
+                        onChange={(e) => setReelTitle(e.target.value)}
+                        className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-100 focus:outline-emerald-500"
+                        placeholder="e.g. Summer Outfits"
+                        required
+                      />
+                   </div>
+                   <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Handle / Username</label>
+                      <input 
+                        type="text"
+                        value={reelHandle}
+                        onChange={(e) => setReelHandle(e.target.value)}
+                        className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-100 focus:outline-emerald-500"
+                        placeholder="e.g. style_hub"
+                        required
+                      />
+                   </div>
+                   <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Cover Image URL</label>
+                      <div className="flex gap-2">
+                        <input 
+                          type="text"
+                          value={reelCover}
+                          onChange={(e) => setReelCover(e.target.value)}
+                          className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-100 focus:outline-emerald-500 flex-1"
+                          placeholder="https://..."
+                          required
+                        />
+                        <label className="bg-slate-800 hover:bg-slate-700 text-white px-3 py-3 rounded-xl cursor-pointer text-xs flex items-center">
+                          Upload
+                          <input 
+                            type="file" 
+                            className="hidden" 
+                            accept="image/*"
+                            onChange={async (e) => {
+                              if (e.target.files?.[0]) {
+                                const base64 = await convertToBase64(e.target.files[0]);
+                                setReelCover(base64);
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+                   </div>
+                   {reelCover && (
+                     <div className="aspect-[3/4] w-24 rounded-lg overflow-hidden border border-slate-800">
+                        <img src={reelCover} className="w-full h-full object-cover" alt="Preview" />
+                     </div>
+                   )}
+                   <div className="flex gap-3 mt-4">
+                      <button 
+                        type="button" 
+                        onClick={() => setShowAddReelModal(false)}
+                        className="flex-1 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold py-3 rounded-xl text-xs"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        type="submit"
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl text-xs"
+                      >
+                        {editReelId ? "Update Reel" : "Save Reel"}
+                      </button>
+                   </div>
+                </form>
+             </div>
           </div>
         )}
 

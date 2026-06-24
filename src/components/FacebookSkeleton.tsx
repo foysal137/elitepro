@@ -1,7 +1,7 @@
 import React from "react";
 
 interface SkeletonProps {
-  layout?: "main" | "categories" | "favorites" | "profile";
+  layout?: "main" | "categories" | "favorites" | "profile" | "feed";
 }
 
 export default function FacebookSkeleton({ layout = "main" }: SkeletonProps) {
@@ -132,12 +132,27 @@ export default function FacebookSkeleton({ layout = "main" }: SkeletonProps) {
     </div>
   );
 
+  const renderFeedSkeleton = () => (
+    <div className="grid grid-cols-2 gap-2 w-full">
+      {[1, 2].map((i) => (
+        <div key={i} className="bg-white rounded-lg p-2.5 flex flex-col shadow-sm border border-gray-100">
+          <div className="h-36 bg-gray-50 rounded mb-2 animate-pulse" />
+          <div className="space-y-2">
+            <div className="h-3 bg-gray-100 rounded w-4/5 animate-pulse" />
+            <div className="h-3 bg-gray-100 rounded w-2/5 animate-pulse" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <>
       {layout === "main" && renderHomeSkeleton()}
       {layout === "categories" && renderCategoriesSkeleton()}
       {layout === "favorites" && renderFavoritesSkeleton()}
       {layout === "profile" && renderProfileSkeleton()}
+      {layout === "feed" && renderFeedSkeleton()}
     </>
   );
 }
