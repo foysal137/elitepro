@@ -3321,7 +3321,7 @@ export default function AdminPanel({
                         value={siteName}
                         onChange={(e) => setSiteName(e.target.value)}
                         className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-sm text-slate-100 focus:outline-none focus:border-emerald-600 transition-all font-semibold"
-                        placeholder="e.g. KenakataBD"
+                        placeholder="e.g. Storefront"
                       />
                     </div>
                     <div className="flex flex-col gap-1.5">

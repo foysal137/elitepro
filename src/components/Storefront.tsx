@@ -178,7 +178,14 @@ const SiteLogoComp = ({ settings, className = "w-6 h-6", style, iconOnly = false
   );
 };
 
-const ProductCard = ({ p, wishlist, onToggleWishlist, onSelectProduct }: { p: Product, wishlist: string[], onToggleWishlist: (id: string) => void, onSelectProduct: (p: Product) => void }) => (
+interface ProductCardProps {
+  p: Product;
+  wishlist: string[];
+  onToggleWishlist: (productId: string) => void;
+  onSelectProduct: (p: Product) => void;
+}
+
+const ProductCard: React.FC<ProductCardProps> = ({ p, wishlist, onToggleWishlist, onSelectProduct }) => (
   <div
     className="bg-white rounded-xl p-3 flex flex-col shadow-sm cursor-pointer border border-transparent hover:border-[#00c09d] hover:shadow-md transition-all group"
     onClick={() => onSelectProduct(p)}
@@ -1474,7 +1481,6 @@ export default function Storefront({
                 }
                 return null;
               })()}
-            </div>
           </div>
         )}
 
@@ -2251,7 +2257,7 @@ export default function Storefront({
         </div>
       )}
       {/* FOOTER SECTION (Packly Style) */}
-      <footer className="bg-[#142e43] text-white pt-16 pb-8 px-4 mt-auto">
+      <footer className="bg-[#142e43] text-white pt-16 pb-8 px-4 mt-auto hidden md:block">
          <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
                {/* Brand Column */}

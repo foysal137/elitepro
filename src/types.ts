@@ -159,6 +159,8 @@ export interface AppSettings {
   contactPhone: string;
   contactEmail: string;
   contactAddress: string;
+  siteDescription?: string; // Add this
+  address?: string; // Add this
   facebookUrl?: string;
   instagramUrl?: string;
   youtubeUrl?: string;

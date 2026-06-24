@@ -487,7 +487,7 @@ let appSettings: AppSettings = {
   
   // Footer Content
   footerText: "Your one-stop shop for premium electronics, fashion, and organic food in Bangladesh. We ensure 100% authentic products delivered with trust.",
-  copyrightText: "© 2026 KenakataBD. All rights reserved.",
+  copyrightText: "© 2026 Storefront. All rights reserved.",
 
   // Operational Settings
   otpVerificationEnabled: false,
@@ -589,8 +589,8 @@ app.get("/api/health", (req, res) => {
 // App Settings
 app.get("/manifest.json", (req, res) => {
   res.json({
-    name: appSettings.pwaName || appSettings.siteName || "KenakataBD",
-    short_name: appSettings.pwaShortName || appSettings.siteName || "KenakataBD",
+    name: appSettings.pwaName || appSettings.siteName || "Storefront",
+    short_name: appSettings.pwaShortName || appSettings.siteName || "Storefront",
     start_url: appSettings.pwaStartUrl || "/",
     display: "standalone",
     background_color: "#ffffff",
@@ -1883,10 +1883,13 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = path.resolve(process.cwd(), "dist");
+    console.log(`Serving static files from: ${distPath}`);
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      const indexPath = path.join(distPath, "index.html");
+      console.log(`Serving index.html from: ${indexPath}`);
+      res.sendFile(indexPath);
     });
   }
 
